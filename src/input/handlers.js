@@ -11,6 +11,7 @@ import { attachMesh, addWireMesh, removeWireMesh, removeMesh } from "../ui/meshe
 import { markActiveTool, refreshAffordability } from "../ui/toolbar.js";
 import { renderInspect, showBanner } from "../ui/hud.js";
 import { toggleThermalOverlay } from "../ui/overlay.js";
+import { notifyOverlayToggled } from "../ui/tutorial.js";
 import { i18n } from "../i18n.js";
 
 export let activeTool = "select";
@@ -150,7 +151,7 @@ container.addEventListener("wheel", (e) => {
     camera.updateProjectionMatrix();
 }, { passive: false });
 
-window.addEventListener("keydown", (e) => { keys[e.key] = true; if (e.key === "t" || e.key === "T") toggleThermalOverlay(); if (e.key === "Escape") setTool("select"); });
+window.addEventListener("keydown", (e) => { keys[e.key] = true; if (e.key === "t" || e.key === "T") { notifyOverlayToggled(); toggleThermalOverlay(); } if (e.key === "Escape") setTool("select"); });
 window.addEventListener("keyup", (e) => { keys[e.key] = false; });
 window.addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
 

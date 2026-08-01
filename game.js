@@ -13,6 +13,7 @@ import { tickHud, showBanner, showGameOver, resetHudStats, renderInspect } from 
 import { tickOverlay, toggleThermalOverlay } from "./src/ui/overlay.js";
 import { renderPalette, refreshAffordability } from "./src/ui/toolbar.js";
 import { setTool, tickInspect } from "./src/input/handlers.js";
+import { tutorial, startTutorial, shouldOfferTutorial, tickTutorial, notifyOverlayToggled } from "./src/ui/tutorial.js";
 import { i18n } from "./src/i18n.js";
 
 let lastTime = 0;
@@ -21,7 +22,10 @@ let heatwaveWasActive = false;
 let gameOverShown = false;
 
 function tick(dt) {
-    STATE.elapsedGameTime += dt;
+    // While the tutorial runs, game time is frozen: demand stays at the gentle
+    // base value and no waves or heatwaves fire — but dt still flows, so a
+    // wired rack visibly earns money mid-lesson.
+    if (!tutorial.active) STATE.elapsedGameTime += dt;
 
     tickEvents(dt, STATE.elapsedGameTime);
     tickDemand(dt, STATE.elapsedGameTime);
@@ -52,6 +56,7 @@ function animate(time) {
     const dt = rawDt * STATE.timeScale;
 
     if (STATE.isRunning && dt > 0) tick(dt);
+    tickTutorial();
 
     tickMeshes(rawDt);
     tickOverlay(rawDt);
@@ -79,6 +84,15 @@ window.startGame = () => {
     STATE.isRunning = true;
     setTool("select");
     refreshAffordability();
+    if (shouldOfferTutorial()) startTutorial();
+};
+window.startTutorialGame = () => {
+    document.getElementById("main-menu").classList.add("hidden");
+    clearWorld();
+    STATE.isRunning = true;
+    setTool("select");
+    refreshAffordability();
+    startTutorial();
 };
 window.restartGame = () => {
     document.getElementById("gameover-modal").classList.add("hidden");
@@ -88,7 +102,7 @@ window.togglePause = () => {
     STATE.timeScale = STATE.timeScale === 0 ? 1 : 0;
     document.getElementById("btn-pause").classList.toggle("text-amber-300", STATE.timeScale === 0);
 };
-window.toggleThermalOverlay = () => toggleThermalOverlay();
+window.toggleThermalOverlay = () => { notifyOverlayToggled(); return toggleThermalOverlay(); };
 window.setTool = setTool;
 window.showHelp = () => document.getElementById("help-modal").classList.remove("hidden");
 window.closeHelp = () => document.getElementById("help-modal").classList.add("hidden");
