@@ -14,7 +14,9 @@ export class Building {
 
         // Power topology (owned by sim/power.js via topology helpers):
         // a chain node has at most one parent wire and any number of children.
-        this.parentId = null;        // upstream building id or "grid" for grid_feed
+        // Sources are born with the implicit "grid" parent — both sim modules
+        // key on that exact value to recognise a live root.
+        this.parentId = this.config.chainRole === "source" ? "grid" : null;
         this.childIds = [];
 
         // Per-tick power resolution results (owned by sim/power.js):

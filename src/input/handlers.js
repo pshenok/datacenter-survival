@@ -5,7 +5,7 @@
 import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
 import { Building } from "../entities/Building.js";
-import { wireBuildings, unwireBuilding, demolish } from "../sim/power.js";
+import { wireBuildings, unwire } from "../sim/power.js";
 import { camera, cameraTarget, renderer, worldToGrid, gridToWorld, buildingGroup } from "../ui/scene.js";
 import { attachMesh, addWireMesh, removeWireMesh, removeMesh } from "../ui/meshes.js";
 import { markActiveTool, refreshAffordability } from "../ui/toolbar.js";
@@ -69,17 +69,21 @@ function handlePrimary(e) {
             wireSource = hit.building;
             showBanner(i18n.t("wire_hint"), 1500);
         } else if (wireSource !== hit.building) {
-            const wire = wireBuildings(wireSource, hit.building);
-            if (wire) addWireMesh(wire, wireSource, hit.building);
+            if (wireBuildings(wireSource, hit.building)) {
+                // Single parent: wiring replaces any previous feed, so drop
+                // the old visual wire into this child before adding the new one.
+                dropWireTo(hit.building.id);
+                const wire = { id: "w" + wireId++, from: wireSource.id, to: hit.building.id, mesh: null };
+                STATE.wires.push(wire);
+                addWireMesh(wire, wireSource, hit.building);
+            }
             wireSource = null;
         }
         return;
     }
     if (activeTool === "demolish") {
         if (hit.building) {
-            const removedWires = demolish(hit.building);
-            removedWires.forEach(removeWireMesh);
-            removeMesh(hit.building);
+            demolishBuilding(hit.building);
             refreshAffordability();
         }
         return;
@@ -87,6 +91,30 @@ function handlePrimary(e) {
     // select
     selectedId = hit.building ? hit.building.id : null;
     renderInspect(hit.building || null);
+}
+
+let wireId = 1;
+
+function dropWireTo(childId) {
+    const idx = STATE.wires.findIndex((w) => w.to === childId);
+    if (idx === -1) return;
+    removeWireMesh(STATE.wires[idx]);
+    STATE.wires.splice(idx, 1);
+}
+
+// Demolish: unwire self and every child (they lose their feed), clean the
+// visual wires, refund half the cost — the Server Survival economics.
+function demolishBuilding(b) {
+    unwire(b);
+    dropWireTo(b.id);
+    for (const cid of [...b.childIds]) {
+        const child = STATE.buildings.find((x) => x.id === cid);
+        if (child) { unwire(child); dropWireTo(child.id); }
+    }
+    STATE.buildings = STATE.buildings.filter((x) => x.id !== b.id);
+    STATE.money += Math.floor(b.config.cost / 2);
+    removeMesh(b);
+    if (selectedId === b.id) { selectedId = null; renderInspect(null); }
 }
 
 export function tickInspect() {
