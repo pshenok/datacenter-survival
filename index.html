@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Datacenter Survival</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" integrity="sha512-dLxUelApnYxpLt6K2iomGngnHO83iUvZytA3YjDUCjT0HDOHKXnVYdf3hU4JjM8uEhxf9nD1/ey98U3t2vZ0qQ==" crossorigin="anonymous"></script>
+  <style>
+    body { margin: 0; overflow: hidden; background: #0a0f14; font-family: 'Courier New', monospace; }
+    .glass-panel { background: rgba(13, 20, 28, 0.88); backdrop-filter: blur(8px); border: 1px solid rgba(96, 165, 250, 0.18); }
+    .build-btn.active { border-color: #60a5fa; background: rgba(96, 165, 250, 0.15); }
+    .build-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div id="canvas-container" class="fixed inset-0"></div>
+
+  <!-- Top HUD -->
+  <div class="absolute top-4 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
+    <div class="glass-panel rounded-xl px-6 py-3 flex items-center gap-8 pointer-events-auto">
+      <div class="text-center">
+        <div class="text-[10px] text-gray-500 uppercase" data-i18n="hud_money">Money</div>
+        <div id="hud-money" class="text-lg font-bold text-green-400">$800</div>
+      </div>
+      <div class="text-center">
+        <div class="text-[10px] text-gray-500 uppercase" data-i18n="hud_reputation">SLA Rep</div>
+        <div id="hud-rep" class="text-lg font-bold text-blue-300">100%</div>
+      </div>
+      <div class="text-center">
+        <div class="text-[10px] text-gray-500 uppercase" data-i18n="hud_demand">Demand</div>
+        <div id="hud-demand" class="text-lg font-bold text-amber-300">0 kW</div>
+      </div>
+      <div class="text-center">
+        <div class="text-[10px] text-gray-500 uppercase" data-i18n="hud_served">Served</div>
+        <div id="hud-served" class="text-lg font-bold text-emerald-300">0 kW</div>
+      </div>
+      <div class="text-center" title="Total facility power / IT power" data-i18n-title="hud_pue_tip">
+        <div class="text-[10px] text-gray-500 uppercase">PUE</div>
+        <div id="hud-pue" class="text-lg font-bold text-cyan-300">—</div>
+      </div>
+      <div class="flex items-center gap-2 pl-4 border-l border-gray-700">
+        <button id="btn-pause" class="glass-panel rounded-lg px-3 py-2 text-blue-300 hover:text-white" onclick="togglePause()">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+        </button>
+        <button id="btn-overlay" class="glass-panel rounded-lg px-3 py-2 text-red-300 hover:text-white" onclick="toggleThermalOverlay()" title="Thermal overlay (T)" data-i18n-title="thermal_overlay_tip">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 3v10m0 0a3 3 0 1 0 3 3M12 13a3 3 0 0 1 3 3m-3-13a2 2 0 0 1 2 2v6.35A5 5 0 1 1 10 11.35V5a2 2 0 0 1 2-2z"/></svg>
+        </button>
+        <select id="lang-select" class="bg-gray-800 text-gray-300 text-xs rounded px-1 py-1" onchange="i18n.setLocale(this.value)">
+          <option value="en">EN</option>
+          <option value="ru">RU</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Event banner -->
+  <div id="event-banner" class="hidden absolute top-24 left-1/2 -translate-x-1/2 z-10 glass-panel rounded-lg px-5 py-2 text-amber-300 text-sm font-bold"></div>
+
+  <!-- Build toolbar -->
+  <div class="absolute bottom-5 left-1/2 -translate-x-1/2 z-10">
+    <div class="glass-panel rounded-2xl p-2 flex items-center gap-1" id="toolbar">
+      <button class="build-btn glass-panel rounded-lg w-16 h-16 flex flex-col items-center justify-center text-gray-300" data-tool="select" onclick="setTool('select')">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M4 4l7 16 2-7 7-2z"/></svg>
+        <span class="text-[9px] mt-1 uppercase" data-i18n="tool_select">Select</span>
+      </button>
+      <button class="build-btn glass-panel rounded-lg w-16 h-16 flex flex-col items-center justify-center text-gray-300" data-tool="wire" onclick="setTool('wire')">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
+        <span class="text-[9px] mt-1 uppercase" data-i18n="tool_wire">Wire</span>
+      </button>
+      <button class="build-btn glass-panel rounded-lg w-16 h-16 flex flex-col items-center justify-center text-gray-300" data-tool="demolish" onclick="setTool('demolish')">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M3 6h18M8 6V4h8v2m-9 3v10a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9"/></svg>
+        <span class="text-[9px] mt-1 uppercase" data-i18n="tool_demolish">Demolish</span>
+      </button>
+      <div class="w-px h-12 bg-gray-700 mx-1"></div>
+      <div id="build-palette" class="flex gap-1"><!-- buttons injected by ui/toolbar.js --></div>
+    </div>
+  </div>
+
+  <!-- Wire hint -->
+  <div id="wire-hint" class="hidden absolute bottom-28 left-1/2 -translate-x-1/2 z-10 glass-panel rounded px-4 py-2 text-xs text-cyan-200" data-i18n="wire_hint">
+    Click a power source, then the building to feed.
+  </div>
+
+  <!-- Main menu -->
+  <div id="main-menu" class="absolute inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm">
+    <div class="glass-panel rounded-2xl p-12 max-w-md w-full text-center border border-blue-500/30">
+      <h1 class="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-red-400 mb-1 tracking-tighter">DATACENTER<br/>SURVIVAL</h1>
+      <p class="text-gray-400 text-xs mb-1" data-i18n="tagline">The physical layer of the cloud</p>
+      <p class="text-gray-600 text-[10px] mb-8">v0.1 · sister of <a class="underline hover:text-gray-400" href="https://pshenok.github.io/server-survival/">Server Survival</a></p>
+      <button onclick="startGame()" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-4 rounded-lg uppercase tracking-wide mb-3" data-i18n="start_game">Power On</button>
+      <button onclick="showHelp()" class="w-full glass-panel hover:border-gray-500 text-gray-300 py-3 rounded-lg text-sm" data-i18n="how_to_play">How to play</button>
+    </div>
+  </div>
+
+  <!-- Help modal -->
+  <div id="help-modal" class="hidden absolute inset-0 z-50 flex items-center justify-center bg-black/80">
+    <div class="glass-panel rounded-2xl p-8 max-w-lg text-sm text-gray-300 space-y-3">
+      <h2 class="text-xl font-bold text-white" data-i18n="help_title">How to play</h2>
+      <p data-i18n="help_1">Racks earn money while powered and cool. Wire power: Grid Feed → Transformer → UPS → PDU → Rack.</p>
+      <p data-i18n="help_2">Every kW a rack draws becomes heat. Place CRAC units to cool — they draw power too. Watch PUE.</p>
+      <p data-i18n="help_3">Overheated racks throttle and miss SLA. Overloaded power links brown out their whole subtree.</p>
+      <p data-i18n="help_4">Press T for the thermal overlay. Survive the demand waves.</p>
+      <button onclick="closeHelp()" class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded" data-i18n="close">Close</button>
+    </div>
+  </div>
+
+  <!-- Game over -->
+  <div id="gameover-modal" class="hidden absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
+    <div class="glass-panel rounded-2xl p-10 text-center border border-red-500/40 pointer-events-auto">
+      <h2 id="gameover-title" class="text-4xl font-black text-red-400 mb-2">FACILITY DOWN</h2>
+      <p id="gameover-reason" class="text-gray-400 mb-1"></p>
+      <p id="gameover-stats" class="text-gray-500 text-sm mb-6"></p>
+      <button onclick="restartGame()" class="bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-8 rounded-lg uppercase" data-i18n="restart">Restart</button>
+    </div>
+  </div>
+
+  <!-- Selected building panel -->
+  <div id="inspect-panel" class="hidden absolute top-24 right-4 z-10 glass-panel rounded-xl p-4 w-64 text-xs text-gray-300"></div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
