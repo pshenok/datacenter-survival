@@ -1,16 +1,19 @@
 import { EN_TRANSLATIONS } from "./locales/en.js";
-import { RU_TRANSLATIONS } from "./locales/ru.js";
+import { UK_TRANSLATIONS } from "./locales/uk.js";
 
 /**
  * Simple i18n manager for the game
  */
 export class I18nManager {
     constructor() {
-        this.currentLocale = (typeof localStorage !== 'undefined' ? localStorage.getItem('dc_locale') : null) || 'en';
         this.translations = {
             en: EN_TRANSLATIONS,
-            ru: RU_TRANSLATIONS,
+            uk: UK_TRANSLATIONS,
         };
+        // A stored locale that no longer exists (e.g. the removed "ru")
+        // must fall back to en, or every t() call returns raw keys.
+        const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('dc_locale') : null;
+        this.currentLocale = stored && this.translations[stored] ? stored : 'en';
     }
 
     setLocale(locale) {

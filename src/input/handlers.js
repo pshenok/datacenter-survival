@@ -42,6 +42,7 @@ function pick(clientX, clientY) {
 
 export function setTool(tool) {
     activeTool = tool;
+    window.__activeToolForTutorial = tool;
     wireSource = null;
     document.getElementById("wire-hint").classList.toggle("hidden", tool !== "wire");
     markActiveTool(tool);

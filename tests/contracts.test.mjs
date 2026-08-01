@@ -10,7 +10,7 @@ import { STATE, resetState } from "../src/core/state.js";
 import { Building, resetBuildingIds } from "../src/entities/Building.js";
 import { tickContracts } from "../src/sim/contracts.js";
 import { EN_TRANSLATIONS } from "../src/locales/en.js";
-import { RU_TRANSLATIONS } from "../src/locales/ru.js";
+import { UK_TRANSLATIONS } from "../src/locales/uk.js";
 
 const rngZero = () => 0;            // pool[0] = serve_kwh, minimum intervals
 
@@ -247,14 +247,14 @@ describe("freeze semantics", () => {
 });
 
 describe("locales", () => {
-    it("EN and RU carry identical key sets (every new string is translated)", () => {
-        expect(Object.keys(RU_TRANSLATIONS).sort()).toEqual(Object.keys(EN_TRANSLATIONS).sort());
+    it("EN and UK carry identical key sets (every new string is translated)", () => {
+        expect(Object.keys(UK_TRANSLATIONS).sort()).toEqual(Object.keys(EN_TRANSLATIONS).sort());
     });
 
     it("every contract pool key has a name string in both locales", () => {
         for (const p of CONFIG.contracts.pool) {
             expect(EN_TRANSLATIONS["contract_" + p.key]).toBeTruthy();
-            expect(RU_TRANSLATIONS["contract_" + p.key]).toBeTruthy();
+            expect(UK_TRANSLATIONS["contract_" + p.key]).toBeTruthy();
         }
     });
 });

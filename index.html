@@ -13,6 +13,24 @@
     .build-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .tut-pulse { animation: tutpulse 1.1s ease-in-out infinite; border-color: #fbbf24 !important; }
     .paused-cta { background: rgba(217,119,6,.35) !important; border-color: #fbbf24 !important; color: #fde68a !important; animation: tutpulse 1.1s ease-in-out infinite; }
+    #tut-spotlight { position: fixed; z-index: 40; pointer-events: none; border-radius: 14px;
+      box-shadow: 0 0 0 9999px rgba(3,6,10,.72), 0 0 26px 4px rgba(251,191,36,.45);
+      border: 2px solid #fbbf24; transition: all .28s ease; opacity: 0; }
+    #tut-callout { position: fixed; z-index: 45; width: 280px; background: #3a2c10;
+      border: 2px solid #fbbf24; border-radius: 12px; padding: 12px 14px; pointer-events: none;
+      transition: left .28s ease, top .28s ease; }
+    #tut-callout::after { content: ""; position: absolute; width: 14px; height: 14px;
+      background: #3a2c10; left: 50%; margin-left: -7px; transform: rotate(45deg); }
+    #tut-callout.arrow-down::after { bottom: -9px; border-right: 2px solid #fbbf24; border-bottom: 2px solid #fbbf24; }
+    #tut-callout.arrow-up::after { top: -9px; border-left: 2px solid #fbbf24; border-top: 2px solid #fbbf24; }
+    .toast-pop { animation: toastpop .35s cubic-bezier(.34,1.56,.64,1); }
+    @keyframes toastpop { 0% { transform: translate(-50%,-8px) scale(.7); opacity: 0; } 100% { transform: translate(-50%,0) scale(1); opacity: 1; } }
+    #tut-rings { position: fixed; z-index: 60; pointer-events: none; }
+    #tut-rings .ring { position: absolute; left: 0; top: 0; width: 10px; height: 10px; margin: -5px;
+      border: 3px solid #fbbf24; border-radius: 50%; animation: ringout 1.1s ease-out forwards; }
+    @keyframes ringout { 0% { transform: scale(1); opacity: .95; } 100% { transform: scale(22); opacity: 0; } }
+    .chip { display: flex; gap: 10px; align-items: center; background: rgba(239,159,39,.08);
+      border: 1px solid rgba(239,159,39,.3); border-radius: 8px; padding: 8px 12px; text-align: left; }
     @keyframes tutpulse { 0%,100% { box-shadow: 0 0 0 0 rgba(251,191,36,.55);} 50% { box-shadow: 0 0 0 7px rgba(251,191,36,0);} }
   </style>
 </head>
@@ -53,7 +71,7 @@
         </button>
         <select id="lang-select" class="bg-gray-800 text-gray-300 text-xs rounded px-1 py-1" onchange="i18n.setLocale(this.value)">
           <option value="en">EN</option>
-          <option value="ru">RU</option>
+          <option value="uk">UK</option>
         </select>
       </div>
     </div>
@@ -95,8 +113,30 @@
     Click a power source, then the building to feed.
   </div>
 
-  <!-- Tutorial panel -->
-  <div id="tutorial-panel" class="hidden absolute bottom-28 left-4 z-20 glass-panel rounded-xl p-4 w-80 border border-amber-500/40"></div>
+  <!-- Tutorial v2: spotlight, callout, checklist, toast, finale rings -->
+  <div id="tut-spotlight" class="hidden"></div>
+  <div id="tut-callout" class="hidden arrow-down"><p class="text-[13px] text-amber-50 leading-relaxed m-0"></p></div>
+  <div id="tut-checklist" class="hidden fixed top-24 left-4 z-40 glass-panel rounded-xl px-4 py-3 w-56 border border-amber-500/30"></div>
+  <div id="tut-toast" class="hidden fixed top-24 left-1/2 z-50 -translate-x-1/2 bg-emerald-900/80 border border-emerald-400 text-emerald-200 text-sm font-bold rounded-full px-6 py-2"></div>
+  <div id="tut-rings" class="hidden"></div>
+
+  <!-- Ceremony: the welcome modal -->
+  <div id="ceremony-modal" class="hidden absolute inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm">
+    <div class="glass-panel rounded-2xl p-9 max-w-md w-full mx-4 text-center border-2 border-amber-500/60" style="box-shadow: 0 0 60px rgba(239,159,39,.25);">
+      <div class="w-14 h-14 rounded-full mx-auto mb-4 flex items-center justify-center border-2 border-amber-400" style="background:#412402;">
+        <svg class="w-7 h-7 text-amber-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
+      </div>
+      <h2 class="text-2xl font-black text-amber-100 mb-1" data-i18n="cer_title">Welcome, Operator</h2>
+      <p class="text-gray-400 text-xs mb-5" data-i18n="cer_intro">You just got the keys to an empty machine hall.</p>
+      <div class="space-y-2 mb-6">
+        <div class="chip"><svg class="w-5 h-5 text-amber-300 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 3v7m0 0-3 4h6l-3 7M5 10h14"/></svg><span class="text-xs text-gray-200" data-i18n="cer_chip_power">Power</span></div>
+        <div class="chip"><svg class="w-5 h-5 text-orange-300 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 3v10m0 0a3 3 0 1 0 3 3M12 13a3 3 0 0 1 3 3"/></svg><span class="text-xs text-gray-200" data-i18n="cer_chip_heat">Heat</span></div>
+        <div class="chip"><svg class="w-5 h-5 text-emerald-300 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg><span class="text-xs text-gray-200" data-i18n="cer_chip_pue">PUE</span></div>
+      </div>
+      <button id="ceremony-start" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3.5 rounded-lg mb-2" data-i18n="cer_start">Teach me — one minute</button>
+      <button id="ceremony-skip" class="text-gray-500 hover:text-gray-300 text-xs py-1" data-i18n="cer_skip">I will figure it out myself</button>
+    </div>
+  </div>
 
   <!-- Main menu -->
   <div id="main-menu" class="absolute inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm">

@@ -16,7 +16,7 @@ import { tickOverlay, toggleThermalOverlay } from "./src/ui/overlay.js";
 import { tickPulses } from "./src/ui/pulses.js";
 import { renderPalette, refreshAffordability } from "./src/ui/toolbar.js";
 import { setTool, tickInspect } from "./src/input/handlers.js";
-import { tutorial, startTutorial, shouldOfferTutorial, tickTutorial, notifyOverlayToggled } from "./src/ui/tutorial.js";
+import { tutorial, showCeremony, shouldOfferTutorial, tickTutorial, notifyOverlayToggled } from "./src/ui/tutorial.js";
 import { openFaq, closeFaq } from "./src/ui/faq.js";
 import { i18n } from "./src/i18n.js";
 
@@ -143,11 +143,11 @@ function beginRun() {
 }
 window.startGame = () => {
     beginRun();
-    if (shouldOfferTutorial()) startTutorial();
+    if (shouldOfferTutorial()) showCeremony();
 };
 window.startTutorialGame = () => {
     beginRun();
-    startTutorial();
+    showCeremony();
 };
 window.restartGame = () => {
     document.getElementById("gameover-modal").classList.add("hidden");
