@@ -105,6 +105,42 @@ export const CONFIG = {
             intervalSec: 120,
             durationSec: 25,
         },
+        // City grid sags: every grid_feed's EFFECTIVE capacity is multiplied
+        // by capacityFactor for the duration. Degraded-not-dead: the chain
+        // stays live, so the UPS never engages — headroom is the defense
+        // (see sim/crisis.js header for the design decision).
+        brownout: {
+            minIntervalSec: 100,
+            maxIntervalSec: 160,
+            minDurationSec: 12,
+            maxDurationSec: 18,
+            capacityFactor: 0.5,
+        },
+        // One random POWERED CRAC breaks (duty forced 0). Select-click it to
+        // repair for repairCost; untouched it self-repairs after selfRepairSec
+        // (an AFK player is not doomed — paid attention is just cheaper).
+        cracBreakdown: {
+            minIntervalSec: 90,
+            maxIntervalSec: 140,
+            selfRepairSec: 45,
+            repairCost: 40,
+        },
+    },
+
+    // ---- Rolling mini-contracts (sim/contracts.js) --------------------
+    // One active at a time, drawn every minIntervalSec..maxIntervalSec of
+    // game time. demandShare targets scale with the demand curve at draw
+    // time so a contract stays meaningful early AND late.
+    contracts: {
+        minIntervalSec: 45,
+        maxIntervalSec: 70,
+        redrawGraceSec: 5,       // breather after a contract resolves
+        pool: [
+            { key: "serve_kwh", windowSec: 60, reward: 120, demandShare: 0.75, minTarget: 5 },
+            { key: "pue_hold", windowSec: 75, reward: 150, holdSec: 45, pueBelow: 1.35 },
+            { key: "no_throttle", windowSec: 90, reward: 100, holdSec: 60 },
+            { key: "peak_kw", windowSec: 45, reward: 80, demandShare: 0.95, minTarget: 4 },
+        ],
     },
 
     colors: {

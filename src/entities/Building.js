@@ -31,6 +31,11 @@ export class Building {
         // CRAC duty cycle (owned by sim/heat.js): 0..1 of coolPerSec applied.
         this.duty = 0;
 
+        // CRAC breakdown (owned by sim/crisis.js): while broken, sim/heat.js
+        // forces duty to 0; repairAt is the game time of the free self-repair.
+        this.broken = false;
+        this.repairAt = 0;
+
         // UPS buffer seconds remaining (owned by sim/power.js).
         this.bufferLeft = type === "ups" ? this.config.bufferSec : 0;
 

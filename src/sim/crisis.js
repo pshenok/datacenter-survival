@@ -1,0 +1,106 @@
+// Crisis events: grid brownout + CRAC breakdown. Pure sim module — reads
+// CONFIG and STATE only, no DOM, no THREE, no timers. Scheduling follows the
+// sim/demand.js heatwave pattern exactly: pure state math against elapsed
+// game time, fire/end anchored to the scheduled time, no Math.random at
+// module scope — every random draw goes through the rng parameter
+// (defaulting to Math.random; tests pass a seeded one).
+//
+// STATE fields owned by this module:
+//   brownout   — { active, endsAt, nextAt, factor }. While active, every
+//                grid_feed's EFFECTIVE capacity is capacityKw * factor —
+//                consumed by sim/power.js; CONFIG.buildings is never mutated.
+//   breakdown  — { nextAt } schedule for the next CRAC failure.
+//   money      — debited by repairCrac() (the paid repair fee only; the free
+//                self-repair charges nothing).
+// Building fields owned (declared in entities/Building.js):
+//   broken     — true while a CRAC is down; sim/heat.js forces duty to 0.
+//   repairAt   — game time of the free self-repair.
+// nextAt === null means "not scheduled yet": the first valid tick draws the
+// schedule from the rng, so game.js's tutorial freeze (elapsed stands still)
+// simply holds every crisis in the future.
+//
+// DESIGN DECISION — brownout is degraded-not-dead, and the UPS does NOT
+// engage. A brownout halves the grid feed's effective capacity; the chain
+// below stays LIVE, so power.js clips every load proportionally as with any
+// overloaded link, and the UPS (which only takes over when its upstream path
+// is dead) keeps recharging instead of discharging. That is the honest
+// model and the honest lesson: batteries ride through OUTAGES, only
+// overprovisioned feed HEADROOM rides through a sag. A facility drawing
+// under half its feed capacity does not even notice the event. The banner
+// copy ("headroom, not batteries") teaches exactly this; tests in
+// tests/crisis.test.mjs pin both behaviours.
+
+import { CONFIG } from "../core/config.js";
+import { STATE } from "../core/state.js";
+
+function span(minSec, maxSec, rng) {
+    return minSec + (maxSec - minSec) * rng();
+}
+
+function tickBrownout(elapsed, rng) {
+    const bo = STATE.brownout;
+    const cfg = CONFIG.events.brownout;
+    if (bo.nextAt === null) {
+        bo.nextAt = elapsed + span(cfg.minIntervalSec, cfg.maxIntervalSec, rng);
+    }
+    if (!bo.active && elapsed >= bo.nextAt) {
+        bo.endsAt = bo.nextAt + span(cfg.minDurationSec, cfg.maxDurationSec, rng);
+        bo.nextAt += span(cfg.minIntervalSec, cfg.maxIntervalSec, rng);
+        bo.factor = cfg.capacityFactor;
+        bo.active = true;
+    }
+    if (bo.active && elapsed >= bo.endsAt) {
+        bo.active = false;
+    }
+}
+
+function tickBreakdown(elapsed, rng) {
+    const bd = STATE.breakdown;
+    const cfg = CONFIG.events.cracBreakdown;
+    if (bd.nextAt === null) {
+        bd.nextAt = elapsed + span(cfg.minIntervalSec, cfg.maxIntervalSec, rng);
+    }
+    if (elapsed >= bd.nextAt) {
+        const candidates = STATE.buildings.filter(
+            (b) => b.type === "crac" && b.powered && !b.broken
+        );
+        if (candidates.length > 0) {
+            const pick = candidates[Math.min(candidates.length - 1, Math.floor(rng() * candidates.length))];
+            pick.broken = true;
+            pick.repairAt = bd.nextAt + cfg.selfRepairSec;
+        }
+        bd.nextAt += span(cfg.minIntervalSec, cfg.maxIntervalSec, rng);
+    }
+    // Free self-repair: an AFK player is not doomed, just billed in downtime.
+    for (const b of STATE.buildings) {
+        if (b.broken && elapsed >= b.repairAt) {
+            b.broken = false;
+            b.repairAt = 0;
+        }
+    }
+}
+
+// Main tick. dt is in seconds, already timeScale-scaled by the caller; the
+// guard matches sim/demand.js — dt must be a finite positive number and the
+// game must not be over, otherwise this is a strict no-op (pause and the
+// tutorial's frozen elapsed both keep every schedule untouched).
+export function tickCrisis(dt, elapsed, rng = Math.random) {
+    if (!Number.isFinite(dt) || dt <= 0 || STATE.gameOver !== null) {
+        return;
+    }
+    tickBrownout(elapsed, rng);
+    tickBreakdown(elapsed, rng);
+}
+
+// Paid repair (wired to the select tool's click in src/input/handlers.js).
+// Charges CONFIG.events.cracBreakdown.repairCost; refuses when the target is
+// not a broken CRAC or the player cannot afford the fee (the placeBuilding
+// affordability rule — a broke player waits out the free self-repair).
+export function repairCrac(b) {
+    if (!b || b.type !== "crac" || !b.broken) return false;
+    if (STATE.money < CONFIG.events.cracBreakdown.repairCost) return false;
+    STATE.money -= CONFIG.events.cracBreakdown.repairCost;
+    b.broken = false;
+    b.repairAt = 0;
+    return true;
+}

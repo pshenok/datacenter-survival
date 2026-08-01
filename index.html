@@ -42,6 +42,7 @@
         <div id="hud-pue" class="text-lg font-bold text-cyan-300">—</div>
       </div>
       <div class="flex items-center gap-2 pl-4 border-l border-gray-700">
+        <button id="btn-faq" class="glass-panel rounded-lg px-3 py-2 text-gray-300 hover:text-white font-bold" onclick="showHelp()" title="FAQ">?</button>
         <button id="btn-pause" class="glass-panel rounded-lg px-3 py-2 text-blue-300 hover:text-white" onclick="togglePause()">
           <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
         </button>
@@ -58,6 +59,9 @@
 
   <!-- Event banner -->
   <div id="event-banner" class="hidden absolute top-24 left-1/2 -translate-x-1/2 z-10 glass-panel rounded-lg px-5 py-2 text-amber-300 text-sm font-bold"></div>
+
+  <!-- Active mini-contract (rendered by src/ui/hud.js) -->
+  <div id="contract-line" class="hidden absolute top-36 left-1/2 -translate-x-1/2 z-10 glass-panel rounded-lg px-4 py-1.5 text-cyan-200 text-xs font-bold"></div>
 
   <!-- Build toolbar -->
   <div class="absolute bottom-5 left-1/2 -translate-x-1/2 z-10">
@@ -99,15 +103,14 @@
     </div>
   </div>
 
-  <!-- Help modal -->
-  <div id="help-modal" class="hidden absolute inset-0 z-50 flex items-center justify-center bg-black/80">
-    <div class="glass-panel rounded-2xl p-8 max-w-lg text-sm text-gray-300 space-y-3">
-      <h2 class="text-xl font-bold text-white" data-i18n="help_title">How to play</h2>
-      <p data-i18n="help_1">Racks earn money while powered and cool. Wire power: Grid Feed → Transformer → UPS → PDU → Rack.</p>
-      <p data-i18n="help_2">Every kW a rack draws becomes heat. Place CRAC units to cool — they draw power too. Watch PUE.</p>
-      <p data-i18n="help_3">Overheated racks throttle and miss SLA. Overloaded power links brown out their whole subtree.</p>
-      <p data-i18n="help_4">Press T for the thermal overlay. Survive the demand waves.</p>
-      <button onclick="closeHelp()" class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded" data-i18n="close">Close</button>
+  <!-- FAQ modal (tabbed; content rendered by src/ui/faq.js) -->
+  <div id="faq-modal" class="hidden absolute inset-0 z-50 flex items-center justify-center bg-black/80">
+    <div class="glass-panel rounded-2xl p-6 max-w-xl w-full mx-4">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="text-xl font-bold text-white" data-i18n="faq_title">FAQ</h2>
+        <button onclick="closeHelp()" class="text-gray-500 hover:text-white text-xl leading-none px-2">×</button>
+      </div>
+      <div id="faq-content"></div>
     </div>
   </div>
 

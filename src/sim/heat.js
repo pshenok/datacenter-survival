@@ -3,7 +3,9 @@
 // OWNS (writes): STATE.heatField, and on Building instances: tempC (all
 // buildings), throttleFactor (racks), duty (CRACs).
 // READS ONLY: STATE.buildings, STATE.heatwave.active, CONFIG.heat,
-// CONFIG.buildings, CONFIG.gridSize.
+// CONFIG.buildings, CONFIG.gridSize, and crac.broken (owned by
+// sim/crisis.js) — a broken CRAC's duty is forced to 0, so it neither
+// cools nor requests power until repaired.
 // Pure sim module — no DOM, no THREE, no clocks, no randomness.
 //
 // Tick order (tickHeat): rack heat injection -> 4-neighbour diffusion ->
@@ -87,7 +89,8 @@ export function dissipateField(dt) {
 // Stage 4 — CRAC cooling. localExcess = sum of (cell - ambient) over the
 // Chebyshev-radius box (negative cells count as 0). duty = min(1,
 // localExcess / coolPerSec) is ALWAYS written (it is next tick's power
-// request); heat is removed only while powered (actualKw > 0 — see the
+// request) — except while broken (sim/crisis.js), which forces duty 0;
+// heat is removed only while powered (actualKw > 0 — see the
 // one-tick-lag note in the header), proportionally to each cell's excess,
 // clamped so no cell drops below ambient.
 export function applyCracCooling(dt) {
@@ -110,7 +113,7 @@ export function applyCracCooling(dt) {
             }
         }
 
-        const duty = coolPerSec > 0 ? Math.min(1, localExcess / coolPerSec) : 0;
+        const duty = coolPerSec > 0 && !b.broken ? Math.min(1, localExcess / coolPerSec) : 0;
         b.duty = duty;
 
         if (b.actualKw <= 0 || duty === 0 || localExcess === 0) continue;

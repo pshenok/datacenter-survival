@@ -17,7 +17,11 @@
 //     overloaded link browns out its whole subtree proportionally and no
 //     link ever carries more than its capacityKw.
 //   - grid_feed (chainRole "source") has parent "grid" implicitly: it IS a
-//     root, never a child of a wire.
+//     root, never a child of a wire. While STATE.brownout.active (owned by
+//     sim/crisis.js), a source's EFFECTIVE capacity is capacityKw *
+//     brownout.factor — config is never mutated. The chain stays LIVE, so
+//     this clips proportionally like any overload and the UPS does NOT
+//     engage (degraded-not-dead; see the sim/crisis.js design decision).
 //   - UPS: when its path to a root is broken or dead, it serves its subtree
 //     from bufferLeft (draining dt per tick while carrying draw > 0; at 0
 //     the subtree goes dark) and recharges at 1/4 rate while the path is
@@ -127,7 +131,10 @@ export function resolvePower(dt) {
                 const c = byId.get(cid);
                 if (c) sum += pullOf(c);
             }
-            const cap = Number.isFinite(b.config.capacityKw) ? b.config.capacityKw : 0;
+            let cap = Number.isFinite(b.config.capacityKw) ? b.config.capacityKw : 0;
+            if (b.config.chainRole === "source" && STATE.brownout.active) {
+                cap *= sanitize(STATE.brownout.factor, 0, 1);
+            }
             p = Math.min(cap, sum);
         }
         pulls.set(b.id, p);

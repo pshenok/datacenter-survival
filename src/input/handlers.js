@@ -6,6 +6,7 @@ import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
 import { Building } from "../entities/Building.js";
 import { wireBuildings, unwire } from "../sim/power.js";
+import { repairCrac } from "../sim/crisis.js";
 import { camera, cameraTarget, renderer, worldToGrid, gridToWorld, buildingGroup } from "../ui/scene.js";
 import { attachMesh, addWireMesh, removeWireMesh, removeMesh } from "../ui/meshes.js";
 import { markActiveTool, refreshAffordability } from "../ui/toolbar.js";
@@ -89,7 +90,16 @@ function handlePrimary(e) {
         }
         return;
     }
-    // select
+    // select. Clicking a broken CRAC is the paid repair (fee in the banner
+    // and inspect panel); the repair banner itself comes from game.js's
+    // broken-set diff. A refusal here can only mean "can't afford it".
+    if (hit.building && hit.building.broken) {
+        if (repairCrac(hit.building)) {
+            refreshAffordability();
+        } else {
+            showBanner(i18n.t("repair_no_funds", { cost: CONFIG.events.cracBreakdown.repairCost }), 2500);
+        }
+    }
     selectedId = hit.building ? hit.building.id : null;
     renderInspect(hit.building || null);
 }

@@ -101,7 +101,9 @@ export function tickMeshes(dt) {
     for (const b of STATE.buildings) {
         if (!b.mesh) continue;
         const base = CONFIG.colors[b.type];
-        if (b.config.chainRole === "load" && !b.powered) {
+        if (b.broken) {
+            b.mesh.material.color.setHex(0x7f1d1d); // broken CRAC: dark red
+        } else if (b.config.chainRole === "load" && !b.powered) {
             b.mesh.material.color.setHex(0x37414d);
         } else if (b.type === "rack" && b.tempC >= b.config.throttleStartC) {
             const k = Math.min(1, (b.tempC - b.config.throttleStartC) / (b.config.shutdownC - b.config.throttleStartC));

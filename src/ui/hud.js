@@ -1,4 +1,6 @@
-// HUD numbers, event banner, inspect panel. Reads STATE, writes DOM only.
+// HUD numbers, event banner, contract line, inspect panel, and the
+// best-run stats persisted to localStorage (guarded for node, like i18n).
+// Reads STATE, writes DOM only.
 import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
 import { i18n } from "../i18n.js";
@@ -6,13 +8,15 @@ import { i18n } from "../i18n.js";
 const el = (id) => document.getElementById(id);
 let bestPue = Infinity;
 let peakDemand = 0;
+let peakServed = 0;
 
 export function resetHudStats() {
     bestPue = Infinity;
     peakDemand = 0;
+    peakServed = 0;
 }
 export function getRunStats() {
-    return { bestPue, peakDemand };
+    return { bestPue, peakDemand, peakServed };
 }
 
 export function tickHud() {
@@ -22,6 +26,7 @@ export function tickHud() {
     el("hud-demand").textContent = `${STATE.demandKw.toFixed(1)} kW`;
     el("hud-served").textContent = `${STATE.servedKw.toFixed(1)} kW`;
     peakDemand = Math.max(peakDemand, STATE.demandKw);
+    peakServed = Math.max(peakServed, STATE.servedKw);
 
     const pue = STATE.itDrawKw > 0.05 ? STATE.totalDrawKw / STATE.itDrawKw : null;
     if (pue !== null) {
@@ -31,6 +36,33 @@ export function tickHud() {
     } else {
         el("hud-pue").textContent = "—";
     }
+
+    // Active-contract line under the event banner.
+    const c = STATE.contract;
+    const line = el("contract-line");
+    if (line) {
+        if (c.key !== null && c.done === null) {
+            line.textContent = i18n.t("contract_hud", {
+                name: contractLabel(c),
+                progress: Math.floor(c.progress),
+                target: c.target,
+                left: Math.max(0, Math.ceil(c.endsAt - STATE.elapsedGameTime)),
+            });
+            line.classList.remove("hidden");
+        } else {
+            line.classList.add("hidden");
+        }
+    }
+}
+
+// Human label for a contract from STATE.contract — shared by the HUD line
+// and game.js's offer banner.
+export function contractLabel(c) {
+    const cfg = CONFIG.contracts.pool.find((p) => p.key === c.key);
+    return i18n.t("contract_" + c.key, {
+        target: c.target,
+        pue: cfg && cfg.pueBelow,
+    });
 }
 
 let bannerTimer = null;
@@ -57,6 +89,9 @@ export function renderInspect(b) {
         rows.push(row(i18n.t("insp_load"), `${b.actualKw.toFixed(1)} / ${b.config.capacityKw} kW`));
         rows.push(row(i18n.t("insp_temp"), `${b.tempC.toFixed(1)}°C`));
     } else if (b.type === "crac") {
+        if (b.broken) {
+            rows.push(`<div class="text-red-400 font-bold mb-1">${i18n.t("insp_broken", { cost: CONFIG.events.cracBreakdown.repairCost })}</div>`);
+        }
         rows.push(row(i18n.t("insp_draw"), `${(b.config.drawKw * b.duty).toFixed(1)} kW`));
         rows.push(row(i18n.t("insp_duty"), `${Math.round(b.duty * 100)}%`));
     } else if (b.type === "ups") {
@@ -72,15 +107,67 @@ function row(k, v) {
     return `<div class="flex justify-between py-0.5"><span class="text-gray-500">${k}</span><span>${v}</span></div>`;
 }
 
+// ---- best-run stats (localStorage, guarded like i18n for node) ----------
+const BEST_KEY = "dc_best_run";
+
+function fmtTime(sec) {
+    return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+}
+
+function loadBest() {
+    try {
+        if (typeof localStorage === "undefined") return null;
+        const raw = localStorage.getItem(BEST_KEY);
+        if (!raw) return null;
+        const b = JSON.parse(raw);
+        return {
+            timeSec: Number.isFinite(b.timeSec) ? b.timeSec : 0,
+            peakServedKw: Number.isFinite(b.peakServedKw) ? b.peakServedKw : 0,
+            bestPue: Number.isFinite(b.bestPue) ? b.bestPue : null,
+        };
+    } catch {
+        return null; // corrupted storage — start a fresh record
+    }
+}
+
+function saveBest(best) {
+    try {
+        if (typeof localStorage !== "undefined") localStorage.setItem(BEST_KEY, JSON.stringify(best));
+    } catch { /* storage unavailable — the record just isn't kept */ }
+}
+
+// Fold this run into the stored record (each metric bests independently)
+// and return the updated record.
+function updateBest(timeSec, stats) {
+    const prev = loadBest() || { timeSec: 0, peakServedKw: 0, bestPue: null };
+    const runPue = isFinite(stats.bestPue) ? stats.bestPue : null;
+    const best = {
+        timeSec: Math.max(prev.timeSec, timeSec),
+        peakServedKw: Math.max(prev.peakServedKw, stats.peakServed),
+        bestPue: runPue === null ? prev.bestPue
+            : prev.bestPue === null ? runPue : Math.min(prev.bestPue, runPue),
+    };
+    saveBest(best);
+    return best;
+}
+
 export function showGameOver(reason) {
     const stats = getRunStats();
-    const mins = Math.floor(STATE.elapsedGameTime / 60);
-    const secs = Math.floor(STATE.elapsedGameTime % 60);
+    const best = updateBest(STATE.elapsedGameTime, stats);
     document.getElementById("gameover-reason").textContent = i18n.t("gameover_" + reason);
-    document.getElementById("gameover-stats").textContent = i18n.t("gameover_stats", {
-        time: `${mins}:${String(secs).padStart(2, "0")}`,
+    const statsEl = document.getElementById("gameover-stats");
+    statsEl.textContent = i18n.t("gameover_stats", {
+        time: fmtTime(STATE.elapsedGameTime),
         kw: stats.peakDemand.toFixed(0),
         pue: isFinite(stats.bestPue) ? stats.bestPue.toFixed(2) : "—",
     });
+    const bestLine = document.createElement("span");
+    bestLine.className = "block text-gray-600 mt-1";
+    bestLine.textContent = i18n.t("gameover_best", {
+        time: fmtTime(best.timeSec),
+        kw: best.peakServedKw.toFixed(0),
+        pue: best.bestPue !== null ? best.bestPue.toFixed(2) : "—",
+    });
+    statsEl.appendChild(bestLine);
     document.getElementById("gameover-modal").classList.remove("hidden");
 }
