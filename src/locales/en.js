@@ -67,10 +67,10 @@ export const EN_TRANSLATIONS = {
     "tut_place_feed": "First, power. Place a GRID FEED — the intake from the city grid. Pick it in the toolbar, then click an empty tile.",
     "tut_place_chain": "Now the delivery chain: place a TRANSFORMER, a UPS and a PDU. Real power flows through all of them.",
     "tut_wire_chain": "Wire them with the WIRE tool: click Grid Feed, then Transformer. Then Transformer → UPS, UPS → PDU.",
-    "tut_place_rack": "Place a RACK and wire it to the PDU. It starts serving demand — watch Money tick up.",
+    "tut_place_rack": "Place a RACK and wire it to the PDU. It will serve demand the moment you press Play.",
     "tut_overlay": "Your rack is making HEAT. Press T (or the thermometer button) to see the thermal overlay.",
     "tut_place_crac": "Cool it: place a CRAC unit near the rack and wire it to the PDU — cooling draws power too. That is why PUE exists.",
-    "tut_finish": "That is the whole loop: power it, cool it, profit. Demand will now start growing in waves. A UPS buys you seconds in a blackout. Good luck.",
+    "tut_finish": "That is the whole loop: power it, cool it, profit. Now press the glowing ▶ button — your datacenter goes live and demand starts flowing.",
     "tut_next": "Got it",
     "tut_skip": "Skip tutorial",
     "menu_tutorial": "Tutorial",
@@ -106,4 +106,6 @@ export const EN_TRANSLATIONS = {
     "faq_events_5": "Mini-contracts roll in with a target and a cash bonus: serve kWh, hold PUE low, keep every rack cool, hit a served peak. Miss the window, miss the money.",
     "faq_controls_1": "Left click: use the active tool. Right/middle drag: pan. Wheel: zoom. T: thermal overlay. Esc: back to select.",
     "faq_controls_2": "Wire tool: click the power SOURCE first, then the building to feed.",
+    "paused_pill": "PAUSED — build freely, then press ▶",
+    "play_pause_tip": "Play / Pause (Space)"
 };

@@ -161,7 +161,8 @@ container.addEventListener("wheel", (e) => {
     camera.updateProjectionMatrix();
 }, { passive: false });
 
-window.addEventListener("keydown", (e) => { keys[e.key] = true; if (e.key === "t" || e.key === "T") { notifyOverlayToggled(); toggleThermalOverlay(); } if (e.key === "Escape") setTool("select"); });
+window.addEventListener("keydown", (e) => { keys[e.key] = true; if (e.key === "t" || e.key === "T") { notifyOverlayToggled(); toggleThermalOverlay(); } if (e.key === "Escape") setTool("select");
+    if (e.key === " ") { e.preventDefault(); window.togglePause(); } });
 window.addEventListener("keyup", (e) => { keys[e.key] = false; });
 window.addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
 

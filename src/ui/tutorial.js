@@ -1,8 +1,8 @@
 // First-run tutorial. Step-driven and action-gated (the Server Survival
 // pattern): a step advances when the player actually does the thing, not when
-// they click "next". While active, game.js freezes elapsedGameTime, so demand
-// stays at the gentle base value and no waves or heatwaves interrupt the
-// lesson — but dt still flows, so money visibly ticks up once a rack serves.
+// they click "next". The whole run starts PAUSED, so the player builds and
+// reads freely; the finale is pressing Play — the moment the datacenter
+// actually powers up.
 //
 // Step conditions are pure functions of STATE so they are unit-testable; the
 // DOM rendering is the thin part.
@@ -33,7 +33,9 @@ export const TUTORIAL_STEPS = [
     { key: "tut_place_rack", done: () => !!poweredOf("rack"), pulse: "rack" },
     { key: "tut_overlay", done: () => tutorial.overlayTouched, pulse: null },
     { key: "tut_place_crac", done: () => !!poweredOf("crac"), pulse: "crac" },
-    { key: "tut_finish", done: () => tutorial.acknowledged, pulse: null, showNext: true },
+    // The finale is a real action too: press PLAY. The whole tutorial runs
+    // paused, so this is the moment the datacenter actually powers up.
+    { key: "tut_finish", done: () => STATE.timeScale > 0, pulse: "__play", showNext: false },
 ];
 
 export const tutorial = {
@@ -121,7 +123,9 @@ function render() {
     if (next) next.addEventListener("click", () => { tutorialNext(); });
     clearPulse();
     if (step.pulse) {
-        const btn = document.querySelector(`[data-tool="${step.pulse}"]`);
+        const btn = step.pulse === "__play"
+            ? document.getElementById("btn-pause")
+            : document.querySelector(`[data-tool="${step.pulse}"]`);
         if (btn) btn.classList.add("tut-pulse");
     }
 }

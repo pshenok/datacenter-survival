@@ -90,6 +90,7 @@ function tick(dt) {
     if (STATE.gameOver && !gameOverShown) {
         gameOverShown = true;
         STATE.timeScale = 0;
+        syncPlayPauseUi();
         showGameOver(STATE.gameOver);
     }
 }
@@ -128,29 +129,42 @@ function clearWorld() {
 }
 
 // ---- window boundary (index.html inline handlers) ----
-window.startGame = () => {
+// Both entries start PAUSED (the Server Survival lesson: the player builds
+// freely, demand only flows once they press Play). Reputation cannot drain
+// while you are still reading.
+function beginRun() {
     document.getElementById("main-menu").classList.add("hidden");
     clearWorld();
     STATE.isRunning = true;
+    STATE.timeScale = 0;
     setTool("select");
     refreshAffordability();
+    syncPlayPauseUi();
+}
+window.startGame = () => {
+    beginRun();
     if (shouldOfferTutorial()) startTutorial();
 };
 window.startTutorialGame = () => {
-    document.getElementById("main-menu").classList.add("hidden");
-    clearWorld();
-    STATE.isRunning = true;
-    setTool("select");
-    refreshAffordability();
+    beginRun();
     startTutorial();
 };
 window.restartGame = () => {
     document.getElementById("gameover-modal").classList.add("hidden");
     window.startGame();
 };
+function syncPlayPauseUi() {
+    const paused = STATE.timeScale === 0;
+    document.getElementById("icon-play").classList.toggle("hidden", !paused);
+    document.getElementById("icon-pause").classList.toggle("hidden", paused);
+    const btn = document.getElementById("btn-pause");
+    btn.classList.toggle("paused-cta", paused);
+    document.getElementById("paused-pill").classList.toggle("hidden", !paused || !STATE.isRunning);
+}
 window.togglePause = () => {
+    if (!STATE.isRunning) return;
     STATE.timeScale = STATE.timeScale === 0 ? 1 : 0;
-    document.getElementById("btn-pause").classList.toggle("text-amber-300", STATE.timeScale === 0);
+    syncPlayPauseUi();
 };
 window.toggleThermalOverlay = () => { notifyOverlayToggled(); return toggleThermalOverlay(); };
 window.setTool = setTool;
