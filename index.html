@@ -61,6 +61,9 @@
         <div id="hud-pue" class="text-lg font-bold text-cyan-300">—</div>
       </div>
       <div class="flex items-center gap-2 pl-4 border-l border-gray-700">
+        <button id="btn-menu" class="glass-panel rounded-lg px-3 py-2 text-gray-300 hover:text-white" onclick="openPauseMenu()" title="Menu (Esc)" data-i18n-title="menu_tip">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
         <button id="btn-faq" class="glass-panel rounded-lg px-3 py-2 text-gray-300 hover:text-white font-bold" onclick="showHelp()" title="FAQ">?</button>
         <button id="btn-pause" class="glass-panel rounded-lg px-4 py-2 text-blue-300 hover:text-white" onclick="togglePause()" title="Play / Pause (Space)" data-i18n-title="play_pause_tip">
           <svg id="icon-play" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -148,6 +151,37 @@
       <button onclick="openCampaign()" class="w-full glass-panel hover:border-emerald-500/50 text-emerald-300 py-3 rounded-lg text-sm mb-3" data-i18n="menu_campaign">Campaign</button>
       <button onclick="startTutorialGame()" class="w-full glass-panel hover:border-amber-500/50 text-amber-300 py-3 rounded-lg text-sm mb-3" data-i18n="menu_tutorial">Tutorial</button>
       <button onclick="showHelp()" class="w-full glass-panel hover:border-gray-500 text-gray-300 py-3 rounded-lg text-sm" data-i18n="how_to_play">How to play</button>
+    </div>
+  </div>
+
+  <!-- In-game pause menu (Esc or the ☰ button) -->
+  <div id="pause-menu-modal" class="hidden absolute inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
+    <div class="glass-panel rounded-2xl p-8 max-w-xs w-full mx-4 text-center border border-blue-500/30">
+      <h2 class="text-xl font-black text-white mb-5" data-i18n="pause_title">Paused</h2>
+      <button onclick="resumeRun()" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-lg uppercase text-sm mb-3" data-i18n="btn_resume">Resume</button>
+      <button id="pause-retry" onclick="retryFromPause()" class="w-full glass-panel hover:border-amber-500/50 text-amber-300 py-3 rounded-lg text-sm mb-3" data-i18n="btn_retry_level">Retry</button>
+      <button onclick="menuFromPause()" class="w-full glass-panel hover:border-gray-500 text-gray-300 py-3 rounded-lg text-sm" data-i18n="btn_to_menu">Menu</button>
+    </div>
+  </div>
+
+  <!-- Level briefing (before a campaign level starts) -->
+  <div id="briefing-modal" class="hidden absolute inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm">
+    <div class="glass-panel rounded-2xl p-8 max-w-lg w-full mx-4 border border-emerald-500/40">
+      <p id="briefing-chapter" class="text-emerald-300/80 text-xs uppercase tracking-wide mb-1"></p>
+      <h2 id="briefing-title" class="text-2xl font-black text-white mb-3"></h2>
+      <p id="briefing-scenario" class="text-gray-300 text-sm leading-relaxed mb-4"></p>
+      <div class="bg-blue-900/25 border border-blue-500/40 rounded-lg p-3 mb-3">
+        <div class="text-blue-300 text-[10px] font-bold uppercase tracking-wide mb-1" data-i18n="brief_learn">What you'll learn</div>
+        <p id="briefing-learn" class="text-gray-200 text-sm m-0"></p>
+      </div>
+      <div class="bg-emerald-900/25 border border-emerald-500/40 rounded-lg p-3 mb-5">
+        <div class="text-emerald-300 text-[10px] font-bold uppercase tracking-wide mb-1" data-i18n="brief_goals">Goals</div>
+        <ul id="briefing-goals" class="text-gray-200 text-sm m-0 pl-4 list-disc"></ul>
+      </div>
+      <div class="flex justify-between gap-3">
+        <button onclick="briefingBack()" class="glass-panel hover:border-gray-500 text-gray-300 py-3 px-5 rounded-lg text-sm" data-i18n="brief_back">← Back</button>
+        <button id="briefing-start" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-6 rounded-lg uppercase text-sm" data-i18n="brief_start">Start level →</button>
+      </div>
     </div>
   </div>
 

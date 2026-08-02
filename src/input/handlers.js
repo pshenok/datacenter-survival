@@ -197,7 +197,16 @@ container.addEventListener("wheel", (e) => {
     camera.updateProjectionMatrix();
 }, { passive: false });
 
-window.addEventListener("keydown", (e) => { keys[e.key] = true; if (e.key === "t" || e.key === "T") { notifyOverlayToggled(); toggleThermalOverlay(); } if (e.key === "Escape") setTool("select");
+window.addEventListener("keydown", (e) => { keys[e.key] = true; if (e.key === "t" || e.key === "T") { notifyOverlayToggled(); toggleThermalOverlay(); }
+    if (e.key === "Escape") {
+        // Two-step: first Esc drops back to the select tool, second (or Esc
+        // with nothing selected) opens the pause menu; Esc on the open menu
+        // resumes — the SS pattern, so the player is never trapped in a run.
+        const pauseMenu = document.getElementById("pause-menu-modal");
+        if (!pauseMenu.classList.contains("hidden")) window.resumeRun();
+        else if (activeTool !== "select") setTool("select");
+        else if (STATE.isRunning) window.openPauseMenu();
+    }
     if (e.key === " ") { e.preventDefault(); window.togglePause(); } });
 window.addEventListener("keyup", (e) => { keys[e.key] = false; });
 window.addEventListener("blur", () => { for (const k in keys) keys[k] = false; });

@@ -26,13 +26,13 @@ export function initCampaignUi(opts) {
     });
     document.getElementById("level-result-retry").addEventListener("click", () => {
         hideResult();
-        window.startCampaignLevel(STATE.campaign.levelId);
+        window.launchCampaignLevel(STATE.campaign.levelId);   // rerun, no briefing
     });
     document.getElementById("level-result-next").addEventListener("click", () => {
         const order = levelOrder();
         const next = order[order.indexOf(STATE.campaign.levelId) + 1];
         hideResult();
-        if (next) window.startCampaignLevel(next);
+        if (next) window.startCampaignLevel(next);            // new level → briefing
         else window.backToMenu();
     });
 }
@@ -80,6 +80,33 @@ export function openCampaign() {
 
 export function closeCampaign() {
     document.getElementById("campaign-modal").classList.add("hidden");
+}
+
+// ---- level briefing ------------------------------------------------------
+// The SS pattern: a level NEVER starts cold. The briefing explains the
+// scenario, the lesson, and the win conditions — the level launches only
+// from its Start button (retry skips the briefing, next-level shows it).
+export function openBriefing(id) {
+    const cfg = CONFIG.campaign.levels[id];
+    const ch = CONFIG.campaign.chapters.find((c) => c.levels.includes(id));
+    document.getElementById("briefing-chapter").textContent = ch ? i18n.t(ch.titleKey) : "";
+    document.getElementById("briefing-title").textContent = i18n.t("lv_" + id);
+    document.getElementById("briefing-scenario").textContent = i18n.t("lv_" + id + "_scenario");
+    document.getElementById("briefing-learn").textContent = i18n.t("lv_" + id + "_learn");
+    const goals = cfg.objectives.map((o) => {
+        if (o.type === "serve_kwh") return i18n.t("obj_serve_kwh", { target: o.target });
+        if (o.type === "pue_below") return i18n.t("obj_pue_below", { value: o.value, hold: o.holdSec });
+        return i18n.t("obj_no_throttle", { hold: o.holdSec });
+    });
+    goals.push(i18n.t("brief_time", { s: cfg.timeLimitSec }));
+    document.getElementById("briefing-goals").innerHTML =
+        goals.map((g) => `<li>${g}</li>`).join("");
+    document.getElementById("briefing-start").onclick = () => window.launchCampaignLevel(id);
+    document.getElementById("briefing-modal").classList.remove("hidden");
+}
+
+export function closeBriefing() {
+    document.getElementById("briefing-modal").classList.add("hidden");
 }
 
 // ---- in-level UI ---------------------------------------------------------

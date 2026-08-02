@@ -19,7 +19,7 @@ import { setTool, tickInspect } from "./src/input/handlers.js";
 import { tutorial, showCeremony, shouldOfferTutorial, tickTutorial, notifyOverlayToggled } from "./src/ui/tutorial.js";
 import { openFaq, closeFaq } from "./src/ui/faq.js";
 import { tickCampaign, startLevelState } from "./src/campaign/campaign.js";
-import { initCampaignUi, openCampaign, closeCampaign, onLevelStart, tickCampaignUi } from "./src/ui/campaign-ui.js";
+import { initCampaignUi, openCampaign, closeCampaign, openBriefing, closeBriefing, onLevelStart, tickCampaignUi } from "./src/ui/campaign-ui.js";
 import { i18n } from "./src/i18n.js";
 
 let lastTime = 0;
@@ -166,23 +166,59 @@ window.restartGame = () => {
     document.getElementById("gameover-modal").classList.add("hidden");
     window.startGame();
 };
-// Campaign entries. A level starts paused like every run; no ceremony —
-// the objectives panel and the brief banner do the teaching here.
+// Campaign entries. Selecting a level opens its BRIEFING (the SS pattern —
+// a level never starts cold); the briefing's Start button launches it,
+// paused like every run. Retry relaunches directly.
 window.openCampaign = openCampaign;
 window.closeCampaign = closeCampaign;
 window.startCampaignLevel = (id) => {
     closeCampaign();
+    document.getElementById("level-result-modal").classList.add("hidden");
+    openBriefing(id);
+};
+window.launchCampaignLevel = (id) => {
+    closeBriefing();
     document.getElementById("level-result-modal").classList.add("hidden");
     beginRun();
     startLevelState(id);
     refreshAffordability();     // re-run under the level's money AND its bans
     onLevelStart(id);
 };
+window.briefingBack = () => {
+    closeBriefing();
+    openCampaign();
+};
 window.backToMenu = () => {
     STATE.isRunning = false;
-    document.getElementById("gameover-modal").classList.add("hidden");
-    document.getElementById("objectives-panel").classList.add("hidden");
+    for (const id of ["gameover-modal", "objectives-panel", "pause-menu-modal", "briefing-modal", "level-result-modal"]) {
+        document.getElementById(id).classList.add("hidden");
+    }
     document.getElementById("main-menu").classList.remove("hidden");
+};
+
+// ---- pause menu (Esc / the ☰ button): the always-available way OUT ------
+window.openPauseMenu = () => {
+    if (!STATE.isRunning) return;
+    STATE.timeScale = 0;
+    syncPlayPauseUi();
+    // Survival has no "retry this level" — the button reads as restart there.
+    document.getElementById("pause-menu-modal").classList.remove("hidden");
+};
+window.resumeRun = () => {
+    document.getElementById("pause-menu-modal").classList.add("hidden");
+    // A decided run (game over / level resolved) stays frozen.
+    if (STATE.gameOver === null && STATE.campaign.done === null) {
+        STATE.timeScale = 1;
+        syncPlayPauseUi();
+    }
+};
+window.retryFromPause = () => {
+    document.getElementById("pause-menu-modal").classList.add("hidden");
+    if (STATE.campaign.levelId !== null) window.launchCampaignLevel(STATE.campaign.levelId);
+    else window.startGame();
+};
+window.menuFromPause = () => {
+    window.backToMenu();
 };
 function syncPlayPauseUi() {
     const paused = STATE.timeScale === 0;
