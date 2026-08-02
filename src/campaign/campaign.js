@@ -85,6 +85,7 @@ export function startLevelState(id) {
     STATE.heatwave.nextAt = Infinity;
     STATE.brownout.nextAt = Infinity;
     STATE.breakdown.nextAt = Infinity;
+    STATE.gridOutage.nextAt = Infinity;
     STATE.contract.nextAt = Infinity;
 
     STATE.campaign = {
@@ -92,17 +93,17 @@ export function startLevelState(id) {
         objectives: cfg.objectives.map((o) => ({ ...o, progress: 0, done: false })),
         endsAt: cfg.timeLimitSec,
         done: null,
-        outage: { active: false, endsAt: 0 },
     };
     return true;
 }
 
 // ---- scripted events -----------------------------------------------------
 // One-shot fire at atSec (anchored to the scheduled time, the sim pattern).
-// A scripted brownout is handed to STATE.brownout and ends by sim/crisis.js's
-// normal endsAt rule; the outage window is owned here end to end.
+// Scripted events are handed to their normal STATE homes (brownout/heatwave/
+// gridOutage) and end by sim/crisis.js / sim/demand.js's own endsAt rules —
+// the window alone is authoritative, so e.g. a grid feed placed mid-outage
+// is exactly as dead as one that existed at fire time.
 function runScript(cfg, elapsed) {
-    const camp = STATE.campaign;
     for (const ev of cfg.script) {
         if (elapsed < ev.atSec || elapsed - ev.atSec > 1) continue; // fire window
         if (ev.kind === "brownout" && !STATE.brownout.active) {
@@ -112,16 +113,10 @@ function runScript(cfg, elapsed) {
         } else if (ev.kind === "heatwave" && !STATE.heatwave.active) {
             STATE.heatwave.active = true;
             STATE.heatwave.endsAt = ev.atSec + ev.durationSec;
-        } else if (ev.kind === "outage" && !camp.outage.active) {
-            // The window alone is authoritative: power.js and demand.js read
-            // campaign.outage.active directly, so a feed placed mid-outage
-            // is exactly as dead as one that existed at fire time.
-            camp.outage.active = true;
-            camp.outage.endsAt = ev.atSec + ev.durationSec;
+        } else if (ev.kind === "outage" && !STATE.gridOutage.active) {
+            STATE.gridOutage.active = true;
+            STATE.gridOutage.endsAt = ev.atSec + ev.durationSec;
         }
-    }
-    if (camp.outage.active && elapsed >= camp.outage.endsAt) {
-        camp.outage.active = false;
     }
 }
 
@@ -193,10 +188,10 @@ export function tickCampaign(dt, elapsed) {
     }
 }
 
-// Every resolution path closes the outage window: once tickCampaign stops
-// running (done !== null freezes it), nothing else could ever end an active
-// outage and the grid would stay dead behind the result modal.
+// Every resolution path closes a scripted outage window: with the level
+// resolved the schedules stay pinned to Infinity, so nothing else would
+// ever end an active outage and the grid would stay dead behind the modal.
 function resolve(camp, verdict) {
     camp.done = verdict;
-    camp.outage.active = false;
+    STATE.gridOutage.active = false;
 }

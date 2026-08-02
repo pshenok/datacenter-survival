@@ -37,6 +37,11 @@ export const STATE = {
     // Math.random out of module/state scope. power.js reads brownout.
     brownout: { active: false, endsAt: 0, nextAt: null, factor: 1 },
     breakdown: { nextAt: null },
+    // Grid OUTAGE: the city feed is DEAD (not sagging) — every grid_feed is a
+    // dead root while active; generators and UPS buffers are the only power.
+    // Survival schedules it randomly (sim/crisis.js); campaign levels pin
+    // nextAt to Infinity and script the window directly (campaign/campaign.js).
+    gridOutage: { active: false, endsAt: 0, nextAt: null },
 
     // rolling mini-contract (owned by sim/contracts.js). key === null means
     // no contract yet; done: null while running, "paid" | "failed" once
@@ -45,7 +50,7 @@ export const STATE = {
 
     // campaign (owned by campaign/campaign.js). levelId === null means
     // survival/sandbox — every campaign hook is a no-op.
-    campaign: { levelId: null, objectives: [], endsAt: 0, done: null, outage: { active: false, endsAt: 0 } },
+    campaign: { levelId: null, objectives: [], endsAt: 0, done: null },
 
     // meta
     gameOver: null,         // null | "bankrupt" | "reputation"
@@ -69,8 +74,9 @@ export function resetState() {
     STATE.heatwave = { active: false, endsAt: 0, nextAt: CONFIG.events.heatwave.firstAtSec };
     STATE.brownout = { active: false, endsAt: 0, nextAt: null, factor: 1 };
     STATE.breakdown = { nextAt: null };
+    STATE.gridOutage = { active: false, endsAt: 0, nextAt: null };
     STATE.contract = { id: 0, key: null, progress: 0, target: 0, reward: 0, endsAt: 0, done: null, nextAt: null };
-    STATE.campaign = { levelId: null, objectives: [], endsAt: 0, done: null, outage: { active: false, endsAt: 0 } };
+    STATE.campaign = { levelId: null, objectives: [], endsAt: 0, done: null };
     STATE.gameOver = null;
 }
 

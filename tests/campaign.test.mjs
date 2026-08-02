@@ -125,9 +125,9 @@ describe("campaign engine", () => {
         const rack = place("rack", 14, 5);
         wireBuildings(pdu, rack);
         runLevel(41);
-        expect(STATE.campaign.outage.active).toBe(true);
+        expect(STATE.gridOutage.active).toBe(true);
         runLevel(8);
-        expect(STATE.campaign.outage.active).toBe(false);
+        expect(STATE.gridOutage.active).toBe(false);
     });
 
     it("a level resolving mid-outage closes the window on the way out", () => {
@@ -136,7 +136,7 @@ describe("campaign engine", () => {
         // window is open — the resolve path must not leave the grid dead.
         runLevel(200);
         expect(STATE.campaign.done).toBe("failed");
-        expect(STATE.campaign.outage.active).toBe(false);
+        expect(STATE.gridOutage.active).toBe(false);
     });
 
     it("won levels persist and unlock through the storage round-trip", () => {
@@ -396,6 +396,24 @@ describe("L5 dark_chain", () => {
         expect(STATE.elapsedGameTime).toBeGreaterThanOrEqual(levelCfg("dark_chain").timeLimitSec);
     });
 
+    it("bans the generator — and the ban is load-bearing: the forbidden build would win", () => {
+        // (a) the config seam the UI gate reads:
+        expect(levelCfg("dark_chain").banned).toContain("generator");
+        // (b) machine-play the build the ban forbids (UPS-less chain + standby
+        // generator, cost 860 ≤ 1200): it WINS, proving the level's UPS lesson
+        // needs the gate. The gate itself lives in the UI layer
+        // (handlers.placeBuilding), so the config field is the tested seam.
+        start("dark_chain");
+        const { xf, pdu } = chain(6, { ups: false });
+        const racks = [place("rack", 14, 5), place("rack", 14, 7)];
+        racks.forEach((r) => wireBuildings(pdu, r));
+        wireBuildings(pdu, place("crac", 15, 6));
+        const g = place("generator", 2, 9);
+        wireBuildings(g, xf);
+        runLevel(levelCfg("dark_chain").timeLimitSec + 5);
+        expect(STATE.campaign.done).toBe("won");
+    });
+
     it("LOSE: a spare feed placed MID-OUTAGE is just as dead — the exploit does not beat the level", () => {
         // The outage window kills every source, including one bought after
         // the lights went out. Without a UPS the money cannot buy the win.
@@ -417,7 +435,7 @@ describe("L5 dark_chain", () => {
             tickCampaign(DT, t);
             // One second into the first outage, the player buys a fresh feed
             // and re-parents the transformer onto it.
-            if (!spareWired && STATE.campaign.outage.active) {
+            if (!spareWired && STATE.gridOutage.active) {
                 const spare = place("grid_feed", 2, 9);
                 const xf = STATE.buildings.find((b) => b.type === "transformer");
                 wireBuildings(spare, xf);

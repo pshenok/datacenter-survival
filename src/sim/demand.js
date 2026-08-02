@@ -96,17 +96,26 @@ function chainAlive(building, byId) {
     let hops = 0;
     while (node) {
         if (node.parentId === "grid") {
-            // During a campaign-scripted grid outage EVERY source is a dead
-            // root (the window is the truth, not a per-building stamp) —
-            // assignment must fall back to the UPS clause below, exactly
-            // like a cut chain.
-            return node.config.chainRole === "source" && !STATE.campaign.outage.active;
+            // During a grid outage EVERY grid feed is a dead root (the
+            // window is the truth, not a per-building stamp) — assignment
+            // must fall back to the UPS/standby clauses below, exactly like
+            // a cut chain. Generators are outage-immune but die dry.
+            if (node.config.chainRole !== "source") return false;
+            if (node.type === "generator") return node.fuelLiters > 0;
+            return !STATE.gridOutage.active;
         }
         // A UPS with charge is a live root for assignment purposes: work must
         // keep flowing to its subtree during an upstream blip, or the buffer
         // in sim/power.js has nothing to carry and the blip becomes a blackout.
         if (node.type === "ups" && node.bufferLeft > 0) {
             return true;
+        }
+        // A standby edge to a fueled generator keeps the subtree assignable
+        // for the same reason — the transfer switch (sim/power.js) gates the
+        // actual delivery through its cutover.
+        if (node.standbyParentId) {
+            const g = byId.get(node.standbyParentId);
+            if (g && g.type === "generator" && g.fuelLiters > 0) return true;
         }
         if (node.parentId === null || ++hops > maxHops) {
             return false;

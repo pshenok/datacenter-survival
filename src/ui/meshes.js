@@ -27,6 +27,18 @@ export function attachMesh(b) {
             mesh = new THREE.Mesh(new THREE.CylinderGeometry(T * 0.3, T * 0.3, T * 0.34, 8), mat);
             mesh.position.y = T * 0.17;
             break;
+        case "generator": {
+            mesh = new THREE.Mesh(new THREE.BoxGeometry(T * 0.72, T * 0.44, T * 0.5), mat);
+            mesh.position.y = T * 0.22;
+            const stack = new THREE.Mesh(
+                new THREE.CylinderGeometry(T * 0.06, T * 0.06, T * 0.34, 6),
+                new THREE.MeshBasicMaterial({ color: 0x525252 })
+            );
+            stack.position.set(T * 0.24, T * 0.36, -T * 0.14);
+            stack.name = "stack";
+            mesh.add(stack);
+            break;
+        }
         case "rack": {
             mesh = new THREE.Mesh(new THREE.BoxGeometry(T * 0.44, T * 1.0, T * 0.62), mat);
             mesh.position.y = T * 0.5;
@@ -82,7 +94,9 @@ export function addWireMesh(wire, fromB, toB) {
         new THREE.Vector3((a.x + c.x) / 2, 0.4, (a.z + c.z) / 2),
         new THREE.Vector3(c.x, 0.4, c.z),
     ]);
-    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: CONFIG.colors.wire }));
+    // Standby edges (transfer switch) read as "not carrying" — muted grey.
+    const color = wire.standby ? CONFIG.colors.wireStandby : CONFIG.colors.wire;
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color }));
     wire.mesh = line;
     wireGroup.add(line);
 }
@@ -103,6 +117,11 @@ export function tickMeshes(dt) {
         const base = CONFIG.colors[b.type];
         if (b.broken) {
             b.mesh.material.color.setHex(0x7f1d1d); // broken CRAC: dark red
+        } else if (b.type === "generator") {
+            // Dry tank = dark; carrying = amber glow; idle standby = base.
+            if (b.fuelLiters <= 0) b.mesh.material.color.setHex(0x37414d);
+            else if (b.actualKw > 0) b.mesh.material.color.setHex(0xf59e0b);
+            else b.mesh.material.color.setHex(base);
         } else if (b.config.chainRole === "load" && !b.powered) {
             b.mesh.material.color.setHex(0x37414d);
         } else if (b.type === "rack" && b.tempC >= b.config.throttleStartC) {

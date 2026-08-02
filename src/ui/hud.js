@@ -96,6 +96,16 @@ export function renderInspect(b) {
         rows.push(row(i18n.t("insp_duty"), `${Math.round(b.duty * 100)}%`));
     } else if (b.type === "ups") {
         rows.push(row(i18n.t("insp_buffer"), `${b.bufferLeft.toFixed(1)}s / ${b.config.bufferSec}s`));
+    } else if (b.type === "generator") {
+        rows.push(row(i18n.t("insp_fuel"), `${b.fuelLiters.toFixed(0)} / ${b.config.tankLiters} L`));
+        rows.push(row(i18n.t("insp_draw"), `${b.actualKw.toFixed(1)} / ${b.config.capacityKw} kW`));
+        if (b.fuelArrivesAt !== null) {
+            rows.push(`<div class="text-amber-300 mb-1">${i18n.t("insp_fuel_incoming", {
+                s: Math.max(0, Math.ceil(b.fuelArrivesAt - STATE.elapsedGameTime)),
+            })}</div>`);
+        } else if (b.fuelLiters < b.config.tankLiters) {
+            rows.push(`<div class="text-gray-500 text-[11px] mb-1">${i18n.t("insp_fuel_hint", { cost: b.config.fuelCost })}</div>`);
+        }
     } else {
         rows.push(row(i18n.t("insp_draw"), `cap ${b.config.capacityKw} kW`));
     }

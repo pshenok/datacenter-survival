@@ -39,6 +39,15 @@ export class Building {
         // UPS buffer seconds remaining (owned by sim/power.js).
         this.bufferLeft = type === "ups" ? this.config.bufferSec : 0;
 
+        // Generator (owned by sim/power.js + sim/crisis.js): born with a
+        // full tank; standby children list is the transfer switch — those
+        // buildings keep their primary feed and fall to this generator only
+        // when that path dies, after cutoverSec.
+        this.fuelLiters = type === "generator" ? this.config.tankLiters : 0;
+        this.fuelArrivesAt = null;      // game time a paid refill lands, or null
+        this.cutoverLeft = type === "generator" ? this.config.cutoverSec : 0;
+        this.standbyParentId = null;    // set on the CHILD of a standby edge
+
         this.mesh = null;            // attached by the UI layer only
     }
 }

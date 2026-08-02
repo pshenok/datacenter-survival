@@ -37,6 +37,24 @@ export const CONFIG = {
             capacityKw: 16,
             chainRole: "fanout",
         },
+        // Backup source. Wire it to a building that already has a live feed
+        // and the edge becomes a STANDBY (transfer switch): the generator
+        // only picks up when the primary path is dead, after cutoverSec —
+        // the gap the UPS buffer exists to bridge. Burns fuel while carrying
+        // (litersPerKwh at the billing scale); an empty tank is a dead root.
+        // Select-click orders a refill: fuelCost now, arrives fuelDeliverySec
+        // later. Immune to grid outages — that is the point of it.
+        generator: {
+            name: "Generator",
+            cost: 220,
+            capacityKw: 20,
+            chainRole: "source",
+            tankLiters: 60,
+            litersPerKwh: 0.25,
+            fuelCost: 90,
+            fuelDeliverySec: 15,
+            cutoverSec: 3,
+        },
         rack: {
             name: "Rack",
             cost: 150,
@@ -125,6 +143,16 @@ export const CONFIG = {
             selfRepairSec: 45,
             repairCost: 40,
         },
+        // The city feed DIES (0%, not a sag): every grid_feed is a dead root
+        // for the duration. UPS buffers bridge seconds; generators carry the
+        // rest. Rare and late — by the first one the player can afford the
+        // answer.
+        gridOutage: {
+            minIntervalSec: 220,
+            maxIntervalSec: 320,
+            minDurationSec: 12,
+            maxDurationSec: 20,
+        },
     },
 
     // ---- Rolling mini-contracts (sim/contracts.js) --------------------
@@ -151,6 +179,7 @@ export const CONFIG = {
     campaign: {
         chapters: [
             { id: "ch1", titleKey: "ch1_title", levels: ["first_watt", "hot_aisle", "the_bill", "sag", "dark_chain"] },
+            { id: "ch2", titleKey: "ch2_title", levels: ["fuel_clock"] },
         ],
         levels: {
             // Teach: the delivery chain. Wire feed→transformer→ups→pdu→rack
@@ -198,17 +227,34 @@ export const CONFIG = {
                 objectives: [{ type: "serve_kwh", target: 46 }],
             },
             // Teach: batteries ride an OUTAGE. The city feed dies three times;
-            // only a chain with a charged UPS serves through the dark.
+            // only a chain with a charged UPS serves through the dark. The
+            // generator is banned here — it would trivialise the UPS lesson
+            // it exists to extend (it gets its own level in Chapter 2).
             dark_chain: {
                 startMoney: 1200,
                 timeLimitSec: 150,
                 demandKw: 12,
+                banned: ["generator"],
                 script: [
                     { atSec: 40, kind: "outage", durationSec: 6 },
                     { atSec: 80, kind: "outage", durationSec: 6 },
                     { atSec: 120, kind: "outage", durationSec: 6 },
                 ],
                 objectives: [{ type: "serve_kwh", target: 28 }],
+            },
+            // Teach: batteries bridge, generators carry, fuel is the real
+            // capacity of your backup. Two 35s outages: the UPS covers 8s of
+            // each — only a standby generator with fuel in the tank serves
+            // the rest.
+            fuel_clock: {
+                startMoney: 1250,
+                timeLimitSec: 180,
+                demandKw: 10,
+                script: [
+                    { atSec: 50, kind: "outage", durationSec: 35 },
+                    { atSec: 120, kind: "outage", durationSec: 35 },
+                ],
+                objectives: [{ type: "serve_kwh", target: 26 }],
             },
         },
     },
@@ -219,9 +265,11 @@ export const CONFIG = {
         transformer: 0xf97316,
         ups: 0x22d3ee,
         pdu: 0xa78bfa,
+        generator: 0xa8a29e,
         rack: 0x34d399,
         crac: 0x60a5fa,
         wire: 0xfde047,
+        wireStandby: 0x94a3b8,
         overlayCold: 0x2563eb,
         overlayHot: 0xdc2626,
     },

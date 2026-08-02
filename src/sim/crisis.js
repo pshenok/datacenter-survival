@@ -80,6 +80,37 @@ function tickBreakdown(elapsed, rng) {
     }
 }
 
+// Survival grid outage: the city feed dies completely for the window
+// (power.js kills every grid_feed root while active). Same schedule pattern
+// as brownout; campaign levels pin nextAt to Infinity and script the window
+// directly, and this tick's end-check closes those too.
+function tickGridOutage(elapsed, rng) {
+    const go = STATE.gridOutage;
+    const cfg = CONFIG.events.gridOutage;
+    if (go.nextAt === null) {
+        go.nextAt = elapsed + span(cfg.minIntervalSec, cfg.maxIntervalSec, rng);
+    }
+    if (!go.active && elapsed >= go.nextAt) {
+        go.endsAt = go.nextAt + span(cfg.minDurationSec, cfg.maxDurationSec, rng);
+        go.nextAt += span(cfg.minIntervalSec, cfg.maxIntervalSec, rng);
+        go.active = true;
+    }
+    if (go.active && elapsed >= go.endsAt) {
+        go.active = false;
+    }
+}
+
+// Fuel logistics: a paid refill lands fuelDeliverySec after the order.
+function tickFuelDeliveries(elapsed) {
+    for (const b of STATE.buildings) {
+        if (b.type !== "generator" || b.fuelArrivesAt === null) continue;
+        if (elapsed >= b.fuelArrivesAt) {
+            b.fuelLiters = b.config.tankLiters;
+            b.fuelArrivesAt = null;
+        }
+    }
+}
+
 // Main tick. dt is in seconds, already timeScale-scaled by the caller; the
 // guard matches sim/demand.js — dt must be a finite positive number and the
 // game must not be over, otherwise this is a strict no-op (pause and the
@@ -90,6 +121,8 @@ export function tickCrisis(dt, elapsed, rng = Math.random) {
     }
     tickBrownout(elapsed, rng);
     tickBreakdown(elapsed, rng);
+    tickGridOutage(elapsed, rng);
+    tickFuelDeliveries(elapsed);
 }
 
 // Paid repair (wired to the select tool's click in src/input/handlers.js).
@@ -102,5 +135,18 @@ export function repairCrac(b) {
     STATE.money -= CONFIG.events.cracBreakdown.repairCost;
     b.broken = false;
     b.repairAt = 0;
+    return true;
+}
+
+// Order a refill (wired to the select tool's click on a generator). Refuses
+// on a full tank, an order already in transit, or an empty wallet — same
+// affordability rule as repairCrac. The tank fills when the truck arrives
+// (tickFuelDeliveries), not at purchase.
+export function orderFuel(b, elapsed) {
+    if (!b || b.type !== "generator") return false;
+    if (b.fuelArrivesAt !== null || b.fuelLiters >= b.config.tankLiters) return false;
+    if (STATE.money < b.config.fuelCost) return false;
+    STATE.money -= b.config.fuelCost;
+    b.fuelArrivesAt = elapsed + b.config.fuelDeliverySec;
     return true;
 }

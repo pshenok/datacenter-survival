@@ -6,7 +6,7 @@ import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
 import { Building } from "../entities/Building.js";
 import { wireBuildings, unwire } from "../sim/power.js";
-import { repairCrac } from "../sim/crisis.js";
+import { repairCrac, orderFuel } from "../sim/crisis.js";
 import { camera, cameraTarget, renderer, worldToGrid, gridToWorld, buildingGroup } from "../ui/scene.js";
 import { attachMesh, addWireMesh, removeWireMesh, removeMesh } from "../ui/meshes.js";
 import { markActiveTool, refreshAffordability } from "../ui/toolbar.js";
@@ -50,6 +50,10 @@ export function setTool(tool) {
 
 function placeBuilding(type, gx, gz) {
     const cfg = CONFIG.buildings[type];
+    if (isBannedHere(type)) {
+        showBanner(i18n.t("lv_banned"), 2500);
+        return;
+    }
     if (STATE.money < cfg.cost) return;
     if (STATE.buildings.some((b) => b.gx === gx && b.gz === gz)) return; // occupied tile
     const b = new Building(type, gx, gz);
@@ -57,6 +61,15 @@ function placeBuilding(type, gx, gz) {
     STATE.buildings.push(b);
     attachMesh(b);
     refreshAffordability();
+}
+
+// Some campaign levels ban a building that would bypass the taught mechanic
+// (e.g. the generator on the UPS level).
+function isBannedHere(type) {
+    const id = STATE.campaign.levelId;
+    if (id === null) return false;
+    const cfg = CONFIG.campaign.levels[id];
+    return !!(cfg && cfg.banned && cfg.banned.includes(type));
 }
 
 function handlePrimary(e) {
@@ -73,10 +86,12 @@ function handlePrimary(e) {
             showBanner(i18n.t("wire_hint"), 1500);
         } else if (wireSource !== hit.building) {
             if (wireBuildings(wireSource, hit.building)) {
-                // Single parent: wiring replaces any previous feed, so drop
-                // the old visual wire into this child before adding the new one.
-                dropWireTo(hit.building.id);
-                const wire = { id: "w" + wireId++, from: wireSource.id, to: hit.building.id, mesh: null };
+                // A generator wired to an already-fed child became a STANDBY
+                // edge (transfer switch) — dashed-grey wire, and it replaces
+                // only a previous standby, never the primary feed.
+                const standby = hit.building.standbyParentId === wireSource.id;
+                dropWireTo(hit.building.id, standby);
+                const wire = { id: "w" + wireId++, from: wireSource.id, to: hit.building.id, standby, mesh: null };
                 STATE.wires.push(wire);
                 addWireMesh(wire, wireSource, hit.building);
             }
@@ -101,27 +116,47 @@ function handlePrimary(e) {
             showBanner(i18n.t("repair_no_funds", { cost: CONFIG.events.cracBreakdown.repairCost }), 2500);
         }
     }
+    // Clicking a generator below a full tank orders the refill truck.
+    if (hit.building && hit.building.type === "generator") {
+        const g = hit.building;
+        if (orderFuel(g, STATE.elapsedGameTime)) {
+            showBanner(i18n.t("fuel_ordered", { s: g.config.fuelDeliverySec }), 3000);
+            refreshAffordability();
+        } else if (g.fuelArrivesAt === null && g.fuelLiters < g.config.tankLiters) {
+            showBanner(i18n.t("repair_no_funds", { cost: g.config.fuelCost }), 2500);
+        }
+    }
     selectedId = hit.building ? hit.building.id : null;
     renderInspect(hit.building || null);
 }
 
 let wireId = 1;
 
-function dropWireTo(childId) {
-    const idx = STATE.wires.findIndex((w) => w.to === childId);
+function dropWireTo(childId, standby = false) {
+    const idx = STATE.wires.findIndex((w) => w.to === childId && !!w.standby === standby);
     if (idx === -1) return;
     removeWireMesh(STATE.wires[idx]);
     STATE.wires.splice(idx, 1);
 }
 
-// Demolish: unwire self and every child (they lose their feed), clean the
-// visual wires, refund half the cost — the Server Survival economics.
+// Demolish: unwire self and every child (they lose their PRIMARY feed;
+// their standby edges survive — the transfer switch dies only with its
+// generator), clean the visual wires, refund half the cost — the Server
+// Survival economics.
 function demolishBuilding(b) {
     unwire(b);
     dropWireTo(b.id);
+    dropWireTo(b.id, true);
     for (const cid of [...b.childIds]) {
         const child = STATE.buildings.find((x) => x.id === cid);
         if (child) { unwire(child); dropWireTo(child.id); }
+    }
+    // A demolished generator takes its standby edges with it.
+    for (const other of STATE.buildings) {
+        if (other.standbyParentId === b.id) {
+            other.standbyParentId = null;
+            dropWireTo(other.id, true);
+        }
     }
     STATE.buildings = STATE.buildings.filter((x) => x.id !== b.id);
     STATE.money += Math.floor(b.config.cost / 2);

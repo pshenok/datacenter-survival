@@ -9,6 +9,7 @@ const ICONS = {
     transformer: '<rect x="5" y="7" width="14" height="12" rx="1"/><path d="M9 7V4m6 3V4M9 12h6m-6 4h6"/>',
     ups: '<rect x="6" y="5" width="12" height="15" rx="1"/><path stroke-linecap="round" d="M12 8v5l2.5-1.8"/>',
     pdu: '<circle cx="12" cy="12" r="7"/><path d="M12 5v3m0 8v3M5 12h3m8 0h3"/>',
+    generator: '<rect x="4" y="9" width="13" height="9" rx="1"/><path d="M17 12h3v4h-3M7 9V6h4v3M9 12.5l-1.5 2h3L9 16.5"/>',
     rack: '<rect x="7" y="4" width="10" height="17" rx="1"/><path d="M9 8h6M9 12h6M9 16h6"/>',
     crac: '<rect x="4" y="7" width="16" height="11" rx="1"/><circle cx="12" cy="12.5" r="3"/><path d="M12 9.5v6M9.4 11l5.2 3M9.4 14l5.2-3"/>',
 };
@@ -36,8 +37,10 @@ export function markActiveTool(tool) {
 }
 
 export function refreshAffordability() {
+    const levelId = STATE.campaign.levelId;
+    const banned = (levelId && CONFIG.campaign.levels[levelId].banned) || [];
     for (const [type, cfg] of Object.entries(CONFIG.buildings)) {
         const btn = document.querySelector(`#build-palette [data-tool="${type}"]`);
-        if (btn) btn.disabled = STATE.money < cfg.cost;
+        if (btn) btn.disabled = STATE.money < cfg.cost || banned.includes(type);
     }
 }

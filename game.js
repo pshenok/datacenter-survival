@@ -91,10 +91,10 @@ function tick(dt) {
         else if (c.done === "failed") showBanner(i18n.t("contract_failed"), 4000);
     }
 
-    // Scripted grid outage (campaign): banner on both edges.
-    if (STATE.campaign.outage.active && !outageWasActive) showBanner(i18n.t("outage_start"), 5000);
-    if (!STATE.campaign.outage.active && outageWasActive) showBanner(i18n.t("outage_end"), 2500);
-    outageWasActive = STATE.campaign.outage.active;
+    // Grid outage (survival-random or campaign-scripted): banner on both edges.
+    if (STATE.gridOutage.active && !outageWasActive) showBanner(i18n.t("outage_start"), 5000);
+    if (!STATE.gridOutage.active && outageWasActive) showBanner(i18n.t("outage_end"), 2500);
+    outageWasActive = STATE.gridOutage.active;
 
     if (STATE.gameOver && !gameOverShown) {
         gameOverShown = true;
@@ -172,8 +172,10 @@ window.openCampaign = openCampaign;
 window.closeCampaign = closeCampaign;
 window.startCampaignLevel = (id) => {
     closeCampaign();
+    document.getElementById("level-result-modal").classList.add("hidden");
     beginRun();
     startLevelState(id);
+    refreshAffordability();     // re-run under the level's money AND its bans
     onLevelStart(id);
 };
 window.backToMenu = () => {

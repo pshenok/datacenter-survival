@@ -53,12 +53,22 @@ function findById(id) {
 // Wire child under parent. Returns false on any illegal edge (bad roles,
 // self-wire, would-be cycle). Enforces single parent: a rewire unwires the
 // old parent first. Idempotent for an already-existing edge.
+//
+// TRANSFER SWITCH: wiring a GENERATOR to a child that already has a primary
+// feed does not re-parent — it sets a STANDBY edge (child.standbyParentId).
+// The child keeps drawing from its primary path; the generator picks up only
+// when that path is dead (see the standby wave in resolvePower). Wiring a
+// generator to an unfed child makes it the ordinary primary parent.
 export function wireBuildings(parent, child) {
     if (!parent || !child || parent === child) return false;
     const pRole = parent.config && parent.config.chainRole;
     const cRole = child.config && child.config.chainRole;
     const allowed = LEGAL_EDGES[pRole];
     if (!allowed || !allowed.includes(cRole)) return false;
+    if (parent.type === "generator" && child.parentId !== null && child.parentId !== parent.id) {
+        child.standbyParentId = parent.id;
+        return true;
+    }
     if (child.parentId === parent.id) return true;
 
     // Cycle guard: reject if child is an ancestor of parent. (With single
@@ -77,8 +87,12 @@ export function wireBuildings(parent, child) {
     return true;
 }
 
-// Remove child's parent wire. Returns true if a wire was removed, false if
-// there was none (a grid_feed's implicit "grid" parent is not a wire).
+// Remove child's PRIMARY parent wire. Returns true if a wire was removed,
+// false if there was none (a grid_feed's implicit "grid" parent is not a
+// wire). The standby edge is deliberately untouched: a paid transfer switch
+// survives a primary rewire and the loss of a primary parent — it dies only
+// with the generator (demolition sweeps standbyParentId) or when another
+// generator replaces it.
 export function unwire(child) {
     if (!child || !child.parentId || child.parentId === "grid") return false;
     const parent = findById(child.parentId);
@@ -95,12 +109,38 @@ function sanitize(value, min, max) {
     return Math.min(Math.max(n, min), max);
 }
 
+// Is a building's PRIMARY parent path dead? Walks parentIds to the root,
+// ignoring UPS buffers — a bridged subtree still has a dead primary, which
+// is exactly when the transfer switch must start its cutover countdown.
+function primaryPathDead(b, byId) {
+    const maxHops = STATE.buildings.length + 1;
+    let node = b;
+    let hops = 0;
+    while (node) {
+        if (node.parentId === "grid") {
+            if (node.config.chainRole !== "source") return true;
+            if (node.type === "generator") return node.fuelLiters <= 0;
+            return STATE.gridOutage.active;
+        }
+        if (node.parentId === null || ++hops > maxHops) return true;
+        node = byId.get(node.parentId);
+    }
+    return true;
+}
+
 // Resolve the whole power forest for this tick.
 export function resolvePower(dt) {
     if (!Number.isFinite(dt) || dt <= 0) return;
 
     const byId = new Map();
     for (const b of STATE.buildings) byId.set(b.id, b);
+
+    // Snapshot UPS buffers: a subtree re-delivered by the standby wave must
+    // not pay double buffer mutations (drained as dead, then recharged).
+    const bufSnap = new Map();
+    for (const b of STATE.buildings) {
+        if (b.type === "ups") bufSnap.set(b.id, b.bufferLeft);
+    }
 
     // 1) Sanitized load requests.
     const requests = new Map();
@@ -132,7 +172,9 @@ export function resolvePower(dt) {
                 if (c) sum += pullOf(c);
             }
             let cap = Number.isFinite(b.config.capacityKw) ? b.config.capacityKw : 0;
-            if (b.config.chainRole === "source" && STATE.brownout.active) {
+            // A brownout is a CITY-grid sag: it clips grid feeds only. A
+            // generator is off-grid — immune by definition, on every path.
+            if (b.type === "grid_feed" && STATE.brownout.active) {
                 cap *= sanitize(STATE.brownout.factor, 0, 1);
             }
             p = Math.min(cap, sum);
@@ -194,17 +236,20 @@ export function resolvePower(dt) {
         }
     }
 
-    // 4) Roots. Sources are live roots (implicit "grid" parent) — unless a
-    // campaign-scripted grid OUTAGE window is active, which kills every
-    // source at once: unlike a brownout (degraded-not-dead), the chain
-    // below is dead and a buffered UPS takes over. The window is the truth,
-    // not a per-building stamp — a feed placed or rewired mid-outage is just
-    // as dead as one that existed when the lights went out. Anything with no
-    // live parent path is likewise a dead root. A final sweep catches
-    // malformed leftovers.
-    const gridDown = STATE.campaign.outage.active;
+    // 4) Roots. Sources are live roots (implicit "grid" parent). A grid
+    // OUTAGE window (STATE.gridOutage.active) kills every GRID FEED at once:
+    // unlike a brownout (degraded-not-dead), the chain below is dead and a
+    // buffered UPS takes over. The window is the truth, not a per-building
+    // stamp — a feed placed or rewired mid-outage is just as dead as one
+    // that existed when the lights went out. Generators are immune to the
+    // outage (that is their whole point) but die on an empty tank. Anything
+    // with no live parent path is likewise a dead root. A final sweep
+    // catches malformed leftovers.
+    const gridDown = STATE.gridOutage.active;
     for (const b of STATE.buildings) {
-        if (b.config.chainRole === "source") deliver(b, !gridDown, gridDown ? 0 : Infinity);
+        if (b.config.chainRole !== "source") continue;
+        const live = b.type === "generator" ? b.fuelLiters > 0 : !gridDown;
+        deliver(b, live, live ? Infinity : 0);
     }
     for (const b of STATE.buildings) {
         if (visited.has(b.id)) continue;
@@ -216,7 +261,125 @@ export function resolvePower(dt) {
         if (!visited.has(b.id)) deliver(b, false, 0);
     }
 
-    // 5) Accounting.
+    // 5) STANDBY WAVE — the transfer switch. For each fueled generator, its
+    // standby children whose PRIMARY path is dead start the cutover clock;
+    // when it hits zero the generator re-delivers those subtrees out of its
+    // remaining capacity. Double-count guards: a candidate whose primary
+    // chain passes through another candidate of the same generator is
+    // dropped (its pull is already inside the ancestor's), and a subtree
+    // another generator re-delivered this tick counts as live, not dead —
+    // belt-and-braces wiring must not burn fuel twice for the same racks.
+    // UPS buffers in a re-delivered subtree are restored from the snapshot,
+    // and a primary-ancestor UPS left bridging NOTHING (the generator took
+    // its whole load) is restored too — while the generator carries, the
+    // bridge stops draining, which is the whole lesson.
+    const redelivered = new Set();
+    const coveredByEarlierWave = (b) => {
+        const maxHops = STATE.buildings.length + 1;
+        let node = b;
+        let hops = 0;
+        while (node) {
+            if (redelivered.has(node.id)) return true;
+            if (!node.parentId || node.parentId === "grid" || ++hops > maxHops) return false;
+            node = byId.get(node.parentId);
+        }
+        return false;
+    };
+    for (const g of STATE.buildings) {
+        if (g.type !== "generator") continue;
+        const candidates = [];
+        for (const b of STATE.buildings) {
+            if (b.standbyParentId === g.id && primaryPathDead(b, byId)
+                && !coveredByEarlierWave(b) && pullOf(b) > 0) {
+                candidates.push(b);
+            }
+        }
+        // Intra-generator dedup: keep only the topmost of nested candidates.
+        const candidateIds = new Set(candidates.map((c) => c.id));
+        const standbys = candidates.filter((c) => {
+            let node = byId.get(c.parentId);
+            let hops = 0;
+            while (node && ++hops <= STATE.buildings.length) {
+                if (candidateIds.has(node.id)) return false;
+                node = node.parentId && node.parentId !== "grid" ? byId.get(node.parentId) : null;
+            }
+            return true;
+        });
+        if (standbys.length === 0 || g.fuelLiters <= 0) {
+            g.cutoverLeft = g.config.cutoverSec;
+            continue;
+        }
+        g.cutoverLeft = Math.max(0, g.cutoverLeft - dt);
+        if (g.cutoverLeft > 0) continue;
+
+        const capLeft = Math.max(0, g.config.capacityKw - g.actualKw);
+        let totalPull = 0;
+        for (const c of standbys) totalPull += pullOf(c);
+        const grantTotal = Math.min(capLeft, totalPull);
+        if (grantTotal <= 0) continue;
+
+        for (const c of standbys) {
+            const stack = [c];
+            while (stack.length) {
+                const n = stack.pop();
+                visited.delete(n.id);
+                redelivered.add(n.id);
+                if (n.type === "ups" && bufSnap.has(n.id)) {
+                    n.bufferLeft = bufSnap.get(n.id);
+                }
+                for (const cid of n.childIds) {
+                    const k = byId.get(cid);
+                    if (k) stack.push(k);
+                }
+            }
+            deliver(c, true, grantTotal * (pullOf(c) / totalPull));
+        }
+        g.actualKw += grantTotal;
+        g.powered = true;
+    }
+
+    // Ancestor-UPS fixup: a UPS on the dead primary path above a standby
+    // attach point self-granted in phase 4 and drained its buffer — but if
+    // the generator has now taken over EVERYTHING the UPS was bridging, the
+    // drain didn't happen physically. Restore its snapshot (held, neither
+    // draining nor recharging: its own upstream is still dead). A UPS still
+    // bridging other, non-transferred loads keeps its drain — buffer time is
+    // time, however many kW it carries.
+    if (redelivered.size > 0) {
+        const carriesOutsideRedelivered = (node) => {
+            for (const cid of node.childIds) {
+                const k = byId.get(cid);
+                if (!k) continue;
+                if (redelivered.has(k.id)) continue;
+                if (pullOf(k) > 0) return true;
+                if (carriesOutsideRedelivered(k)) return true;
+            }
+            return false;
+        };
+        for (const c of STATE.buildings) {
+            if (!c.standbyParentId || !redelivered.has(c.id)) continue;
+            let node = byId.get(c.parentId);
+            let hops = 0;
+            while (node && ++hops <= STATE.buildings.length) {
+                if (node.type === "ups" && !carriesOutsideRedelivered(node)) {
+                    node.bufferLeft = bufSnap.get(node.id);
+                    node.actualKw = 0;
+                }
+                node = node.parentId && node.parentId !== "grid" ? byId.get(node.parentId) : null;
+            }
+        }
+    }
+
+    // 6) Fuel burn (billing scale: one game minute = one billing hour) and
+    // accounting.
+    for (const b of STATE.buildings) {
+        if (b.type === "generator" && b.actualKw > 0) {
+            b.fuelLiters = Math.max(
+                0,
+                b.fuelLiters - b.actualKw * (dt / 60) * b.config.litersPerKwh
+            );
+        }
+    }
     let itKw = 0;
     let coolKw = 0;
     for (const b of STATE.buildings) {

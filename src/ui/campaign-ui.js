@@ -2,6 +2,7 @@
 // modal. Reads campaign/campaign.js state; owns no sim fields. game.js
 // wires the window boundary (openCampaign / startCampaignLevel / …) and
 // hands us a freeze() callback so play/pause UI stays game.js's business.
+import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
 import { completedLevels, isLevelUnlocked, levelOrder } from "../campaign/campaign.js";
 import { showBanner } from "./hud.js";
@@ -41,24 +42,29 @@ export function renderCampaignLevels() {
     const host = document.getElementById("campaign-levels");
     if (!host) return;
     const done = completedLevels();
-    host.innerHTML = levelOrder().map((id, i) => {
-        const unlocked = isLevelUnlocked(id, done);
-        const finished = done.includes(id);
-        const mark = finished
-            ? '<span class="text-emerald-400">✓</span>'
-            : unlocked ? `<span class="text-gray-500">${i + 1}</span>`
-                : '<span class="text-gray-700">🔒</span>';
-        const cls = unlocked
-            ? "glass-panel hover:border-emerald-500/60 cursor-pointer"
-            : "glass-panel opacity-40 cursor-not-allowed";
-        return `<button data-level="${id}" ${unlocked ? "" : "disabled"}
-            class="${cls} w-full text-left rounded-lg px-4 py-3 mb-2 flex items-center gap-3">
-            <span class="w-5 text-center font-bold">${mark}</span>
-            <span class="flex-1">
-                <span class="block text-sm font-bold text-white">${i18n.t("lv_" + id)}</span>
-                <span class="block text-[11px] text-gray-500">${i18n.t("lv_" + id + "_brief")}</span>
-            </span>
-        </button>`;
+    const order = levelOrder();
+    host.innerHTML = CONFIG.campaign.chapters.map((ch) => {
+        const rows = ch.levels.map((id) => {
+            const unlocked = isLevelUnlocked(id, done);
+            const finished = done.includes(id);
+            const n = order.indexOf(id) + 1;
+            const mark = finished
+                ? '<span class="text-emerald-400">✓</span>'
+                : unlocked ? `<span class="text-gray-500">${n}</span>`
+                    : '<span class="text-gray-700">🔒</span>';
+            const cls = unlocked
+                ? "glass-panel hover:border-emerald-500/60 cursor-pointer"
+                : "glass-panel opacity-40 cursor-not-allowed";
+            return `<button data-level="${id}" ${unlocked ? "" : "disabled"}
+                class="${cls} w-full text-left rounded-lg px-4 py-3 mb-2 flex items-center gap-3">
+                <span class="w-5 text-center font-bold">${mark}</span>
+                <span class="flex-1">
+                    <span class="block text-sm font-bold text-white">${i18n.t("lv_" + id)}</span>
+                    <span class="block text-[11px] text-gray-500">${i18n.t("lv_" + id + "_brief")}</span>
+                </span>
+            </button>`;
+        }).join("");
+        return `<p class="text-emerald-300/80 text-xs uppercase tracking-wide mb-2 mt-3 first:mt-0">${i18n.t(ch.titleKey)}</p>${rows}`;
     }).join("");
     for (const btn of host.querySelectorAll("button[data-level]")) {
         if (!btn.disabled) {
