@@ -132,7 +132,7 @@ export const UK_TRANSLATIONS = {
 
     "menu_campaign": "Кампанія",
     "campaign_title": "Кампанія",
-    "ch1_title": "Глава 1 — Живлення і тепло",
+    "ch1_title": "Розділ 1 — Живлення і тепло",
     "lv_first_watt": "Перший ват",
     "lv_first_watt_brief": "Проведи ланцюг: Ввід → Трансформатор → UPS → PDU → Стійка. Віддай свої перші кіловат-години.",
     "lv_hot_aisle": "Гарячий коридор",
