@@ -18,6 +18,8 @@ import { renderPalette, refreshAffordability } from "./src/ui/toolbar.js";
 import { setTool, tickInspect } from "./src/input/handlers.js";
 import { tutorial, showCeremony, shouldOfferTutorial, tickTutorial, notifyOverlayToggled } from "./src/ui/tutorial.js";
 import { openFaq, closeFaq } from "./src/ui/faq.js";
+import { tickCampaign, startLevelState } from "./src/campaign/campaign.js";
+import { initCampaignUi, openCampaign, closeCampaign, onLevelStart, tickCampaignUi } from "./src/ui/campaign-ui.js";
 import { i18n } from "./src/i18n.js";
 
 let lastTime = 0;
@@ -28,6 +30,7 @@ let brokenIds = new Set();
 let seenContractId = 0;
 let seenContractDone = null;
 let gameOverShown = false;
+let outageWasActive = false;
 
 function tick(dt) {
     // While the tutorial runs, game time is frozen: demand stays at the gentle
@@ -42,6 +45,7 @@ function tick(dt) {
     resolvePower(dt);
     tickHeat(dt);
     tickContracts(dt, STATE.elapsedGameTime);   // judged on THIS tick's facts
+    tickCampaign(dt, STATE.elapsedGameTime);    // scripted events + objectives, judged last
 
     // UI-side reactions to sim facts
     const wave = upcomingWave(STATE.elapsedGameTime);
@@ -87,11 +91,18 @@ function tick(dt) {
         else if (c.done === "failed") showBanner(i18n.t("contract_failed"), 4000);
     }
 
+    // Scripted grid outage (campaign): banner on both edges.
+    if (STATE.campaign.outage.active && !outageWasActive) showBanner(i18n.t("outage_start"), 5000);
+    if (!STATE.campaign.outage.active && outageWasActive) showBanner(i18n.t("outage_end"), 2500);
+    outageWasActive = STATE.campaign.outage.active;
+
     if (STATE.gameOver && !gameOverShown) {
         gameOverShown = true;
         STATE.timeScale = 0;
         syncPlayPauseUi();
-        showGameOver(STATE.gameOver);
+        // In a campaign level the result modal (with Retry) covers the loss;
+        // the survival game-over screen would double up on top of it.
+        if (STATE.campaign.levelId === null) showGameOver(STATE.gameOver);
     }
 }
 
@@ -103,6 +114,7 @@ function animate(time) {
 
     if (STATE.isRunning && dt > 0) tick(dt);
     tickTutorial();
+    tickCampaignUi();
 
     tickMeshes(rawDt);
     if (STATE.isRunning && STATE.timeScale > 0) tickPulses(rawDt);
@@ -126,6 +138,7 @@ function clearWorld() {
     seenContractId = 0;
     seenContractDone = null;
     gameOverShown = false;
+    outageWasActive = false;
 }
 
 // ---- window boundary (index.html inline handlers) ----
@@ -153,6 +166,22 @@ window.restartGame = () => {
     document.getElementById("gameover-modal").classList.add("hidden");
     window.startGame();
 };
+// Campaign entries. A level starts paused like every run; no ceremony —
+// the objectives panel and the brief banner do the teaching here.
+window.openCampaign = openCampaign;
+window.closeCampaign = closeCampaign;
+window.startCampaignLevel = (id) => {
+    closeCampaign();
+    beginRun();
+    startLevelState(id);
+    onLevelStart(id);
+};
+window.backToMenu = () => {
+    STATE.isRunning = false;
+    document.getElementById("gameover-modal").classList.add("hidden");
+    document.getElementById("objectives-panel").classList.add("hidden");
+    document.getElementById("main-menu").classList.remove("hidden");
+};
 function syncPlayPauseUi() {
     const paused = STATE.timeScale === 0;
     document.getElementById("icon-play").classList.toggle("hidden", !paused);
@@ -162,7 +191,10 @@ function syncPlayPauseUi() {
     document.getElementById("paused-pill").classList.toggle("hidden", !paused || !STATE.isRunning);
 }
 window.togglePause = () => {
-    if (!STATE.isRunning) return;
+    // No resume once the run is decided: a survival game-over or a resolved
+    // campaign level freezes time for good — Space behind the result modal
+    // must not restart the sim (Retry/Next/Menu are the only exits).
+    if (!STATE.isRunning || STATE.gameOver !== null || STATE.campaign.done !== null) return;
     STATE.timeScale = STATE.timeScale === 0 ? 1 : 0;
     syncPlayPauseUi();
 };
@@ -173,6 +205,12 @@ window.closeHelp = closeFaq;
 
 // ---- boot ----
 renderPalette((type) => setTool(type));
+initCampaignUi({
+    freeze: () => {
+        STATE.timeScale = 0;
+        syncPlayPauseUi();
+    },
+});
 resetCamera();
 requestAnimationFrame(animate);
 

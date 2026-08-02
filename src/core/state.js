@@ -18,6 +18,9 @@ export const STATE = {
     // demand & delivery (owned by sim/demand.js)
     demandKw: 0,
     servedKw: 0,
+    // Campaign override: when not null, tickDemand uses this flat kW instead
+    // of the survival curve (and ignores waves). Owned by campaign/campaign.js.
+    demandFixedKw: null,
     // power accounting (owned by sim/power.js)
     itDrawKw: 0,            // racks only — the PUE denominator
     totalDrawKw: 0,         // racks + cooling — what the power bill charges
@@ -40,6 +43,10 @@ export const STATE = {
     // resolved (the resolved contract stays visible until the next draw).
     contract: { id: 0, key: null, progress: 0, target: 0, reward: 0, endsAt: 0, done: null, nextAt: null },
 
+    // campaign (owned by campaign/campaign.js). levelId === null means
+    // survival/sandbox — every campaign hook is a no-op.
+    campaign: { levelId: null, objectives: [], endsAt: 0, done: null, outage: { active: false, endsAt: 0 } },
+
     // meta
     gameOver: null,         // null | "bankrupt" | "reputation"
     sound: null,
@@ -54,6 +61,7 @@ export function resetState() {
     STATE.heatField = new Float32Array(CONFIG.gridSize * CONFIG.gridSize).fill(CONFIG.heat.ambientC);
     STATE.demandKw = 0;
     STATE.servedKw = 0;
+    STATE.demandFixedKw = null;
     STATE.itDrawKw = 0;
     STATE.totalDrawKw = 0;
     STATE.money = CONFIG.economy.startMoney;
@@ -62,6 +70,7 @@ export function resetState() {
     STATE.brownout = { active: false, endsAt: 0, nextAt: null, factor: 1 };
     STATE.breakdown = { nextAt: null };
     STATE.contract = { id: 0, key: null, progress: 0, target: 0, reward: 0, endsAt: 0, done: null, nextAt: null };
+    STATE.campaign = { levelId: null, objectives: [], endsAt: 0, done: null, outage: { active: false, endsAt: 0 } };
     STATE.gameOver = null;
 }
 

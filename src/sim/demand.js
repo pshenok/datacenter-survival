@@ -68,6 +68,8 @@ export function demandCurveKw(elapsed) {
 // within waveWarningSec of it, else null. A wave stops being "upcoming" the
 // moment it lands (atSec itself is active, not upcoming).
 export function upcomingWave(elapsed) {
+    // Pinned demand (campaign) runs no waves — announcing one would be a lie.
+    if (STATE.demandFixedKw !== null) return null;
     let next = null;
     for (const wave of CONFIG.demand.waves) {
         if (wave.atSec > elapsed && (next === null || wave.atSec < next.atSec)) {
@@ -94,7 +96,11 @@ function chainAlive(building, byId) {
     let hops = 0;
     while (node) {
         if (node.parentId === "grid") {
-            return node.config.chainRole === "source";
+            // During a campaign-scripted grid outage EVERY source is a dead
+            // root (the window is the truth, not a per-building stamp) —
+            // assignment must fall back to the UPS clause below, exactly
+            // like a cut chain.
+            return node.config.chainRole === "source" && !STATE.campaign.outage.active;
         }
         // A UPS with charge is a live root for assignment purposes: work must
         // keep flowing to its subtree during an upstream blip, or the buffer
@@ -155,7 +161,9 @@ export function tickDemand(dt, elapsed) {
         return;
     }
 
-    STATE.demandKw = demandCurveKw(elapsed);
+    // Campaign levels pin demand flat (STATE.demandFixedKw); survival runs
+    // the ramp-and-waves curve.
+    STATE.demandKw = STATE.demandFixedKw !== null ? STATE.demandFixedKw : demandCurveKw(elapsed);
     assignLoad();
 
     // Economy (game-minute-as-billing-hour, see header). The power bill uses

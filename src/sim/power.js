@@ -194,11 +194,17 @@ export function resolvePower(dt) {
         }
     }
 
-    // 4) Roots. Sources are live roots (implicit "grid" parent). Anything
-    // with no live parent path is a dead root — which is exactly where a
-    // buffered UPS takes over. A final sweep catches malformed leftovers.
+    // 4) Roots. Sources are live roots (implicit "grid" parent) — unless a
+    // campaign-scripted grid OUTAGE window is active, which kills every
+    // source at once: unlike a brownout (degraded-not-dead), the chain
+    // below is dead and a buffered UPS takes over. The window is the truth,
+    // not a per-building stamp — a feed placed or rewired mid-outage is just
+    // as dead as one that existed when the lights went out. Anything with no
+    // live parent path is likewise a dead root. A final sweep catches
+    // malformed leftovers.
+    const gridDown = STATE.campaign.outage.active;
     for (const b of STATE.buildings) {
-        if (b.config.chainRole === "source") deliver(b, true, Infinity);
+        if (b.config.chainRole === "source") deliver(b, !gridDown, gridDown ? 0 : Infinity);
     }
     for (const b of STATE.buildings) {
         if (visited.has(b.id)) continue;

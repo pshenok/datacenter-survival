@@ -145,8 +145,37 @@
       <p class="text-gray-400 text-xs mb-1" data-i18n="tagline">The physical layer of the cloud</p>
       <p class="text-gray-600 text-[10px] mb-8">v0.1 · sister of <a class="underline hover:text-gray-400" href="https://pshenok.github.io/server-survival/">Server Survival</a></p>
       <button onclick="startGame()" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-4 rounded-lg uppercase tracking-wide mb-3" data-i18n="start_game">Power On</button>
+      <button onclick="openCampaign()" class="w-full glass-panel hover:border-emerald-500/50 text-emerald-300 py-3 rounded-lg text-sm mb-3" data-i18n="menu_campaign">Campaign</button>
       <button onclick="startTutorialGame()" class="w-full glass-panel hover:border-amber-500/50 text-amber-300 py-3 rounded-lg text-sm mb-3" data-i18n="menu_tutorial">Tutorial</button>
       <button onclick="showHelp()" class="w-full glass-panel hover:border-gray-500 text-gray-300 py-3 rounded-lg text-sm" data-i18n="how_to_play">How to play</button>
+    </div>
+  </div>
+
+  <!-- Campaign level select (rendered by src/ui/campaign-ui.js) -->
+  <div id="campaign-modal" class="hidden absolute inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm">
+    <div class="glass-panel rounded-2xl p-8 max-w-md w-full mx-4 border border-emerald-500/30">
+      <div class="flex justify-between items-center mb-1">
+        <h2 class="text-2xl font-black text-white" data-i18n="campaign_title">Campaign</h2>
+        <button onclick="closeCampaign()" class="text-gray-500 hover:text-white text-xl leading-none px-2">×</button>
+      </div>
+      <p class="text-emerald-300/80 text-xs uppercase tracking-wide mb-4" data-i18n="ch1_title">Chapter 1 — Power &amp; Heat</p>
+      <div id="campaign-levels"></div>
+    </div>
+  </div>
+
+  <!-- In-level objectives panel (same slot as the tutorial checklist) -->
+  <div id="objectives-panel" class="hidden fixed top-24 left-4 z-40 glass-panel rounded-xl px-4 py-3 w-64 border border-emerald-500/30"></div>
+
+  <!-- Level result (victory or time-out) -->
+  <div id="level-result-modal" class="hidden absolute inset-0 z-50 flex items-center justify-center bg-black/80">
+    <div class="glass-panel rounded-2xl p-10 max-w-md w-full mx-4 text-center border border-emerald-500/40">
+      <h2 id="level-result-title" class="text-3xl font-black mb-2"></h2>
+      <p id="level-result-sub" class="text-gray-400 text-sm mb-6"></p>
+      <div class="flex gap-3 justify-center">
+        <button id="level-result-next" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-6 rounded-lg uppercase text-sm hidden" data-i18n="btn_next_level">Next level</button>
+        <button id="level-result-retry" class="bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-6 rounded-lg uppercase text-sm hidden" data-i18n="btn_retry_level">Retry</button>
+        <button id="level-result-menu" class="glass-panel hover:border-gray-500 text-gray-300 py-3 px-6 rounded-lg uppercase text-sm" data-i18n="btn_to_menu">Menu</button>
+      </div>
     </div>
   </div>
 

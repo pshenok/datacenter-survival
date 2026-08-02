@@ -143,6 +143,76 @@ export const CONFIG = {
         ],
     },
 
+    // ---- Campaign (campaign/campaign.js) ------------------------------
+    // One mechanic per level; every level must be machine-provably winnable
+    // WITH the taught mechanic and losable WITHOUT it (tests/campaign.test.mjs).
+    // Campaign levels pin demand flat (demandFixedKw), disable every random
+    // event/contract schedule, and run only the events in `script`.
+    campaign: {
+        chapters: [
+            { id: "ch1", titleKey: "ch1_title", levels: ["first_watt", "hot_aisle", "the_bill", "sag", "dark_chain"] },
+        ],
+        levels: {
+            // Teach: the delivery chain. Wire feed→transformer→ups→pdu→rack
+            // and serve. Money is exactly the chain + slack.
+            first_watt: {
+                startMoney: 520,
+                timeLimitSec: 120,
+                demandKw: 4,
+                script: [],
+                objectives: [{ type: "serve_kwh", target: 3 }],
+            },
+            // Teach: heat is real. A permanent heatwave rolls in at 20s
+            // (ambient 34, stagnant air) — uncooled racks throttle; hold a
+            // cool room through it to win. The streak only counts from
+            // afterSec, once the heat has actually arrived.
+            hot_aisle: {
+                startMoney: 1200,
+                timeLimitSec: 240,
+                demandKw: 12,
+                script: [{ atSec: 20, kind: "heatwave", durationSec: 100000 }],
+                objectives: [{ type: "no_throttle", holdSec: 45, afterSec: 70 }],
+            },
+            // Teach: PUE and CRAC placement. Summer heat + a dense four-rack
+            // aisle make cooling mandatory — and the pue_below cap makes
+            // WHERE you put it matter: in-radius CRACs cool the racks per
+            // watt drawn; out-of-radius ones burn power on the diffuse pool
+            // without saving the aisle. Cool it, but cool it efficiently.
+            the_bill: {
+                startMoney: 1500,
+                timeLimitSec: 240,
+                demandKw: 20,
+                script: [{ atSec: 20, kind: "heatwave", durationSec: 100000 }],
+                objectives: [
+                    { type: "no_throttle", holdSec: 45, afterSec: 70 },
+                    { type: "pue_below", value: 1.35, holdSec: 40, afterSec: 70 },
+                ],
+            },
+            // Teach: headroom rides a sag (brownout = degraded-not-dead, the
+            // UPS never engages). One feed clips hard at 35%; two feeds carry.
+            sag: {
+                startMoney: 1800,
+                timeLimitSec: 150,
+                demandKw: 20,
+                script: [{ atSec: 45, kind: "brownout", durationSec: 60, factor: 0.35 }],
+                objectives: [{ type: "serve_kwh", target: 46 }],
+            },
+            // Teach: batteries ride an OUTAGE. The city feed dies three times;
+            // only a chain with a charged UPS serves through the dark.
+            dark_chain: {
+                startMoney: 1200,
+                timeLimitSec: 150,
+                demandKw: 12,
+                script: [
+                    { atSec: 40, kind: "outage", durationSec: 6 },
+                    { atSec: 80, kind: "outage", durationSec: 6 },
+                    { atSec: 120, kind: "outage", durationSec: 6 },
+                ],
+                objectives: [{ type: "serve_kwh", target: 28 }],
+            },
+        },
+    },
+
     colors: {
         bg: 0x0a0f14,
         grid_feed: 0xfacc15,
