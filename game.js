@@ -31,6 +31,7 @@ let seenContractId = 0;
 let seenContractDone = null;
 let gameOverShown = false;
 let outageWasActive = false;
+let tariffWasActive = false;
 
 function tick(dt) {
     // While the tutorial runs, game time is frozen: demand stays at the gentle
@@ -96,6 +97,13 @@ function tick(dt) {
     if (!STATE.gridOutage.active && outageWasActive) showBanner(i18n.t("outage_end"), 2500);
     outageWasActive = STATE.gridOutage.active;
 
+    // Peak tariff: the meter, not the machinery.
+    if (STATE.tariff.active && !tariffWasActive) {
+        showBanner(i18n.t("tariff_start", { mult: STATE.tariff.multiplier }), 5000);
+    }
+    if (!STATE.tariff.active && tariffWasActive) showBanner(i18n.t("tariff_end"), 2500);
+    tariffWasActive = STATE.tariff.active;
+
     if (STATE.gameOver && !gameOverShown) {
         gameOverShown = true;
         STATE.timeScale = 0;
@@ -139,6 +147,7 @@ function clearWorld() {
     seenContractDone = null;
     gameOverShown = false;
     outageWasActive = false;
+    tariffWasActive = false;
 }
 
 // ---- window boundary (index.html inline handlers) ----

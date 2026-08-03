@@ -43,6 +43,7 @@
       <div class="text-center">
         <div class="text-[10px] text-gray-500 uppercase" data-i18n="hud_money">Money</div>
         <div id="hud-money" class="text-lg font-bold text-green-400">$800</div>
+        <div id="hud-tariff" class="hidden text-[9px] font-bold text-amber-300 uppercase tracking-wide"></div>
       </div>
       <div class="text-center">
         <div class="text-[10px] text-gray-500 uppercase" data-i18n="hud_reputation">SLA Rep</div>
@@ -110,6 +111,11 @@
       <div id="build-palette" class="flex gap-1"><!-- buttons injected by ui/toolbar.js --></div>
     </div>
   </div>
+
+  <!-- Thermal overlay legend (built from CONFIG by src/ui/overlay.js) -->
+  <!-- Bottom-right: the top-right stack belongs to the inspect panel, which
+       would sit on top of the legend exactly when a player is diagnosing. -->
+  <div id="overlay-legend" class="hidden absolute bottom-5 right-4 z-10 glass-panel rounded-lg px-3 py-2 w-44"></div>
 
   <!-- Wire hint -->
   <div id="wire-hint" class="hidden absolute bottom-28 left-1/2 -translate-x-1/2 z-10 glass-panel rounded px-4 py-2 text-xs text-cyan-200" data-i18n="wire_hint">
@@ -203,7 +209,8 @@
   <div id="level-result-modal" class="hidden absolute inset-0 z-50 flex items-center justify-center bg-black/80">
     <div class="glass-panel rounded-2xl p-10 max-w-md w-full mx-4 text-center border border-emerald-500/40">
       <h2 id="level-result-title" class="text-3xl font-black mb-2"></h2>
-      <p id="level-result-sub" class="text-gray-400 text-sm mb-6"></p>
+      <p id="level-result-sub" class="text-gray-400 text-sm mb-4"></p>
+      <p id="level-result-tip" class="hidden text-left text-gray-200 text-sm bg-blue-900/25 border border-blue-500/40 rounded-lg p-3 mb-6 leading-relaxed"></p>
       <div class="flex gap-3 justify-center">
         <button id="level-result-next" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-6 rounded-lg uppercase text-sm hidden" data-i18n="btn_next_level">Next level</button>
         <button id="level-result-retry" class="bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-6 rounded-lg uppercase text-sm hidden" data-i18n="btn_retry_level">Retry</button>

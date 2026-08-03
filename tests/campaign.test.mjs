@@ -88,6 +88,8 @@ describe("campaign engine", () => {
         expect(STATE.heatwave.nextAt).toBe(Infinity);
         expect(STATE.brownout.nextAt).toBe(Infinity);
         expect(STATE.breakdown.nextAt).toBe(Infinity);
+        expect(STATE.gridOutage.nextAt).toBe(Infinity);
+        expect(STATE.tariff.nextAt).toBe(Infinity);
         expect(STATE.contract.nextAt).toBe(Infinity);
         runLevel(10);
         expect(STATE.demandKw).toBe(4);
@@ -137,6 +139,68 @@ describe("campaign engine", () => {
         runLevel(200);
         expect(STATE.campaign.done).toBe("failed");
         expect(STATE.gridOutage.active).toBe(false);
+    });
+
+    it("the death floors sit BELOW every winning run's worst moment", () => {
+        // A floor tuned by intuition eventually kills a legitimate build.
+        // This walks each level's canonical winning build and pins the
+        // margin, so a future retune that crosses it turns red here.
+        const floors = CONFIG.campaign.failConditions;
+        const builds = {
+            first_watt: () => {
+                const { pdu } = chain(5);
+                wireBuildings(pdu, place("rack", 14, 5));
+            },
+            hot_aisle: () => {
+                const { tail, pdu } = chain(5);
+                const pdu2 = place("pdu", 11, 8);
+                wireBuildings(tail, pdu2);
+                [[14, 5], [14, 7]].forEach(([gx, gz]) => wireBuildings(pdu, place("rack", gx, gz)));
+                [[13, 6], [15, 6]].forEach(([gx, gz]) => wireBuildings(pdu2, place("crac", gx, gz)));
+            },
+        };
+        for (const [id, build] of Object.entries(builds)) {
+            start(id);
+            build();
+            let minRep = Infinity;
+            let minMoney = Infinity;
+            const cfgLvl = levelCfg(id);
+            for (let i = 0; i < (cfgLvl.timeLimitSec + 5) / DT; i++) {
+                if (STATE.campaign.done !== null) break;
+                STATE.elapsedGameTime += DT;
+                const t = STATE.elapsedGameTime;
+                tickEvents(DT, t);
+                tickCrisis(DT, t, rngZero);
+                tickDemand(DT, t);
+                resolvePower(DT);
+                tickHeat(DT);
+                tickCampaign(DT, t);
+                minRep = Math.min(minRep, STATE.reputation);
+                minMoney = Math.min(minMoney, STATE.money);
+            }
+            expect(STATE.campaign.done, `${id} still wins`).toBe("won");
+            expect(minRep, `${id} rep margin`).toBeGreaterThan(floors.repBelow);
+            expect(minMoney, `${id} money margin`).toBeGreaterThan(floors.moneyBelow);
+        }
+    });
+
+    it("the money floor calls a bankrupt run early and by name", () => {
+        start("the_bill");
+        STATE.money = CONFIG.campaign.failConditions.moneyBelow - 1;
+        STATE.elapsedGameTime = 5;
+        tickCampaign(DT, STATE.elapsedGameTime);
+        expect(STATE.campaign.done).toBe("failed");
+        expect(STATE.campaign.reason).toBe("fail_money");
+        expect(STATE.elapsedGameTime).toBeLessThan(levelCfg("the_bill").timeLimitSec);
+    });
+
+    it("a met objective beats a floor in the same tick — you cannot lose a won level", () => {
+        start("first_watt");
+        STATE.campaign.objectives.forEach((o) => { o.done = true; });
+        STATE.reputation = 0;      // deep under the rep floor
+        STATE.money = -10000;      // and under the money floor
+        tickCampaign(DT, 1);
+        expect(STATE.campaign.done).toBe("won");
     });
 
     it("won levels persist and unlock through the storage round-trip", () => {
@@ -200,13 +264,15 @@ describe("L1 first_watt", () => {
         expect(STATE.elapsedGameTime).toBeLessThan(levelCfg("first_watt").timeLimitSec);
     });
 
-    it("LOSE: an unwired room bleeds reputation to game-over before the clock runs out", () => {
+    it("LOSE: an unwired room hits the reputation floor long before the clock", () => {
         start("first_watt");
         place("grid_feed", 2, 5);
         place("rack", 14, 5); // never wired
         runLevel(levelCfg("first_watt").timeLimitSec + 5);
         expect(STATE.campaign.done).toBe("failed");
-        expect(STATE.gameOver).toBe("reputation");
+        // The level-scoped floor calls it early and by name — a dead run is
+        // not watched for its full time limit.
+        expect(STATE.campaign.reason).toBe("fail_rep");
         expect(STATE.elapsedGameTime).toBeLessThan(levelCfg("first_watt").timeLimitSec);
     });
 });
@@ -260,7 +326,8 @@ describe("L3 the_bill", () => {
         return racks;
     }
 
-    it("WIN: in-radius CRACs keep the dense aisle cool AND efficient", () => {
+    // The intended solve: the MINIMUM cooling that holds the aisle.
+    it("WIN: two in-radius CRACs keep the dense aisle cool AND efficient", () => {
         start("the_bill");
         const { tail, pdu } = chain(3);
         const pdu2 = place("pdu", 11, 8);
@@ -268,11 +335,34 @@ describe("L3 the_bill", () => {
         denseAisle(pdu, pdu2);
         const pdu3 = place("pdu", 11, 11);
         wireBuildings(tail, pdu3);
-        const cracs = [place("crac", 13, 5), place("crac", 16, 6), place("crac", 14, 7)];
+        const cracs = [place("crac", 13, 5), place("crac", 16, 6)];
         cracs.forEach((c) => wireBuildings(pdu3, c));
         expect(buildCost()).toBeLessThanOrEqual(levelCfg("the_bill").startMoney);
         runLevel(levelCfg("the_bill").timeLimitSec + 5);
         expect(STATE.campaign.done).toBe("won");
+    });
+
+    it("LOSE: over-cooling — four CRACs hold the aisle but blow the PUE cap", () => {
+        // Impossible to express before CRAC part-load draw: under a linear
+        // model four quarter-duty units cost exactly what one full unit does,
+        // so over-provisioned cooling was free. Now idle draw makes it the
+        // other way a player can fail this level.
+        start("the_bill");
+        const { tail, pdu } = chain(3);
+        const pdu2 = place("pdu", 11, 8);
+        wireBuildings(tail, pdu2);
+        denseAisle(pdu, pdu2);
+        const pdu3 = place("pdu", 11, 11);
+        wireBuildings(tail, pdu3);
+        for (const [gx, gz] of [[13, 5], [16, 6], [14, 7], [13, 7]]) {
+            wireBuildings(pdu3, place("crac", gx, gz));
+        }
+        runLevel(levelCfg("the_bill").timeLimitSec + 5);
+        expect(STATE.campaign.done).toBe("failed");
+        const cool = STATE.campaign.objectives.find((o) => o.type === "no_throttle");
+        const pue = STATE.campaign.objectives.find((o) => o.type === "pue_below");
+        expect(cool.done).toBe(true);    // the room IS cool…
+        expect(pue.done).toBe(false);    // …and that is exactly the problem
     });
 
     it("LOSE: no cooling at all — the summer heat throttles the dense aisle", () => {

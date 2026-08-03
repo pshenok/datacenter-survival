@@ -244,23 +244,81 @@ describe("resolvePower — delivery and brownout", () => {
         expect(STATE.itDrawKw).toBeCloseTo(30, 9);
     });
 
-    it("CRAC draws drawKw * duty into totalDrawKw but not itDrawKw", () => {
+    it("CRAC draw lands in totalDrawKw but never in itDrawKw", () => {
         const { pdu } = chain();
         const rack = place("rack");
         rack.assignedKw = 4;
         wireBuildings(pdu, rack);
         const crac = place("crac");
-        crac.duty = 0.5;
+        crac.duty = 1;
         wireBuildings(pdu, crac);
         resolvePower(1);
-        expect(crac.actualKw).toBeCloseTo(1.5, 9);
+        const cfg = CONFIG.buildings.crac;
+        expect(crac.actualKw).toBeCloseTo(cfg.drawKw, 9);
         expect(crac.powered).toBe(true);
         expect(STATE.itDrawKw).toBeCloseTo(4, 9);
-        expect(STATE.totalDrawKw).toBeCloseTo(5.5, 9);
-        crac.duty = 0;
+        expect(STATE.totalDrawKw).toBeCloseTo(4 + cfg.drawKw, 9);
+    });
+});
+
+// Part-load physics: fans and pumps spin whether or not there is heat to
+// move, so draw is idle + (full - idle) * duty^exp — NOT a straight line.
+// The consequence is the lesson the game teaches with PUE, so it is pinned
+// here: split the same cooling job across more units and you pay more.
+describe("CRAC part-load draw", () => {
+    const cfg = () => CONFIG.buildings.crac;
+    function drawAt(duty, broken = false) {
+        resetState();
+        resetBuildingIds();
+        const { pdu } = chain();
+        const crac = place("crac");
+        crac.duty = duty;
+        crac.broken = broken;
+        wireBuildings(pdu, crac);
         resolvePower(1);
-        expect(crac.actualKw).toBe(0);
-        expect(crac.powered).toBe(true); // idle load on a live chain
+        return crac.actualKw;
+    }
+
+    it("pays idle draw at zero duty and full draw at full duty", () => {
+        // Absolute, CONFIG-independent: idle draw existing AT ALL is the
+        // mechanic. Tuning idleDrawKw to 0 must turn this red, and reading
+        // the bound from CONFIG would let it pass.
+        expect(drawAt(0)).toBeGreaterThan(0);
+        expect(drawAt(0)).toBeLessThan(drawAt(1));
+        expect(drawAt(0)).toBeCloseTo(cfg().idleDrawKw, 9);
+        expect(drawAt(1)).toBeCloseTo(cfg().drawKw, 9);
+    });
+
+    it("is CONCAVE, not merely affine — the curve is the point", () => {
+        // An affine draw (partLoadExp = 1) already beats the old linear
+        // model, but the sub-linear curve is what makes the first fraction
+        // of duty the expensive one. Margin chosen so exp=1 fails.
+        const lo = drawAt(0);
+        const hi = drawAt(1);
+        expect(drawAt(0.5)).toBeGreaterThan(lo + (hi - lo) * 0.55);
+    });
+
+    it("is monotonic in duty and always between idle and full", () => {
+        let prev = -Infinity;
+        for (const d of [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1]) {
+            const kw = drawAt(d);
+            expect(kw).toBeGreaterThanOrEqual(prev);
+            expect(kw).toBeGreaterThanOrEqual(cfg().idleDrawKw - 1e-9);
+            expect(kw).toBeLessThanOrEqual(cfg().drawKw + 1e-9);
+            prev = kw;
+        }
+    });
+
+    it("THE LESSON: two half-loaded units cost more than one full one", () => {
+        // Cooling delivered is coolPerSec * duty — linear — so 2 x 0.5 duty
+        // removes exactly the heat 1 x 1.0 does. The power bill does not agree.
+        expect(2 * drawAt(0.5)).toBeGreaterThan(drawAt(1));
+        expect(4 * drawAt(0.25)).toBeGreaterThan(2 * drawAt(0.5));
+    });
+
+    it("a broken unit is off, not idling — it must not bill", () => {
+        expect(drawAt(0, true)).toBe(0);
+        expect(drawAt(1, true)).toBe(0);
     });
 });
 
@@ -399,7 +457,8 @@ describe("resolvePower — guards", () => {
         expect(nanRack.powered).toBe(true); // sanitized to an idle rack
         expect(negRack.actualKw).toBe(0);
         expect(infRack.actualKw).toBeCloseTo(CONFIG.buildings.rack.capacityKw, 9);
-        expect(crac.actualKw).toBe(0);
+        // NaN duty sanitizes to 0 — which is idle, not off (see part-load).
+        expect(crac.actualKw).toBeCloseTo(CONFIG.buildings.crac.idleDrawKw, 9);
         expect(Number.isFinite(STATE.itDrawKw)).toBe(true);
         expect(Number.isFinite(STATE.totalDrawKw)).toBe(true);
         for (const b of STATE.buildings) {

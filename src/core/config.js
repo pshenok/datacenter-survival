@@ -70,7 +70,15 @@ export const CONFIG = {
             cost: 110,
             capacityKw: 0,
             chainRole: "load",   // it draws power like a load
-            drawKw: 3,           // consumption at full duty
+            drawKw: 3,           // consumption at FULL duty
+            // Part-load draw (sim/power.js): fans and pumps spin whether or
+            // not there is heat to move, so a CRAC at 10% duty does NOT cost
+            // 10%. draw = idle + (full - idle) * duty^partLoadExp. The
+            // consequence is the lesson: two half-loaded units cost more than
+            // one full one, so cooling you don't need is a permanent line on
+            // the bill — and on your PUE.
+            idleDrawKw: 0.9,
+            partLoadExp: 0.7,
             coolPerSec: 10,      // heat units removed/sec at full duty, split over radius
             radius: 3,           // cells (Chebyshev)
         },
@@ -153,6 +161,17 @@ export const CONFIG = {
             minDurationSec: 12,
             maxDurationSec: 20,
         },
+        // Peak pricing window: the utility bills every kW at multiplier for
+        // the duration. It touches NOTHING else — no capacity, no heat, no
+        // SLA. The answer is not more hardware; it is having built an
+        // efficient facility before the window opened.
+        tariff: {
+            minIntervalSec: 75,
+            maxIntervalSec: 120,
+            minDurationSec: 20,
+            maxDurationSec: 30,
+            multiplier: 2.5,
+        },
     },
 
     // ---- Rolling mini-contracts (sim/contracts.js) --------------------
@@ -177,6 +196,14 @@ export const CONFIG = {
     // Campaign levels pin demand flat (demandFixedKw), disable every random
     // event/contract schedule, and run only the events in `script`.
     campaign: {
+        // Level-scoped death floors. Survival's bankruptcyAt (-500) sits far
+        // below a level's startMoney, so without these a provably-dead run is
+        // watched for its full time limit — retry latency nobody budgeted for.
+        // Checked AFTER the objective sweep, so a player who has already met
+        // everything can never be killed by a floor. Levels may override.
+        // tests/campaign.test.mjs proves every winning build's worst moment
+        // stays above these.
+        failConditions: { repBelow: 25, moneyBelow: -150 },
         chapters: [
             { id: "ch1", titleKey: "ch1_title", levels: ["first_watt", "hot_aisle", "the_bill", "sag", "dark_chain"] },
             { id: "ch2", titleKey: "ch2_title", levels: ["fuel_clock"] },
@@ -202,11 +229,13 @@ export const CONFIG = {
                 script: [{ atSec: 20, kind: "heatwave", durationSec: 100000 }],
                 objectives: [{ type: "no_throttle", holdSec: 45, afterSec: 70 }],
             },
-            // Teach: PUE and CRAC placement. Summer heat + a dense four-rack
-            // aisle make cooling mandatory — and the pue_below cap makes
-            // WHERE you put it matter: in-radius CRACs cool the racks per
-            // watt drawn; out-of-radius ones burn power on the diffuse pool
-            // without saving the aisle. Cool it, but cool it efficiently.
+            // Teach: PUE — cooling is not free, and MORE of it is not better.
+            // Summer heat + a dense four-rack aisle make cooling mandatory,
+            // but every CRAC pays idle draw whether it is working or not
+            // (see buildings.crac part-load), so the cap punishes both
+            // mistakes at once: too little cooling throttles the racks, too
+            // much cooling blows the PUE. Two in-radius units clear both;
+            // three is already over-provisioned.
             the_bill: {
                 startMoney: 1500,
                 timeLimitSec: 240,
@@ -214,7 +243,7 @@ export const CONFIG = {
                 script: [{ atSec: 20, kind: "heatwave", durationSec: 100000 }],
                 objectives: [
                     { type: "no_throttle", holdSec: 45, afterSec: 70 },
-                    { type: "pue_below", value: 1.35, holdSec: 40, afterSec: 70 },
+                    { type: "pue_below", value: 1.3, holdSec: 40, afterSec: 70 },
                 ],
             },
             // Teach: headroom rides a sag (brownout = degraded-not-dead, the

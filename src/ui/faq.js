@@ -44,7 +44,8 @@ function tabContent() {
             <p>${i18n.t("faq_events_3", { pct: Math.round(CONFIG.events.brownout.capacityFactor * 100) })}</p>
             <p>${i18n.t("faq_events_4", { cost: CONFIG.events.cracBreakdown.repairCost, wait: CONFIG.events.cracBreakdown.selfRepairSec })}</p>
             <p>${i18n.t("faq_events_5")}</p>
-            <p>${i18n.t("faq_events_6")}</p>`;
+            <p>${i18n.t("faq_events_6")}</p>
+            <p>${i18n.t("faq_events_7")}</p>`;
         case "controls": return `
             <p>${i18n.t("faq_controls_1")}</p>
             <p>${i18n.t("faq_controls_2")}</p>`;

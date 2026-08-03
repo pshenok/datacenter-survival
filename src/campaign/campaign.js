@@ -86,6 +86,7 @@ export function startLevelState(id) {
     STATE.brownout.nextAt = Infinity;
     STATE.breakdown.nextAt = Infinity;
     STATE.gridOutage.nextAt = Infinity;
+    STATE.tariff.nextAt = Infinity;
     STATE.contract.nextAt = Infinity;
 
     STATE.campaign = {
@@ -93,6 +94,7 @@ export function startLevelState(id) {
         objectives: cfg.objectives.map((o) => ({ ...o, progress: 0, done: false })),
         endsAt: cfg.timeLimitSec,
         done: null,
+        reason: null,
     };
     return true;
 }
@@ -116,6 +118,10 @@ function runScript(cfg, elapsed) {
         } else if (ev.kind === "outage" && !STATE.gridOutage.active) {
             STATE.gridOutage.active = true;
             STATE.gridOutage.endsAt = ev.atSec + ev.durationSec;
+        } else if (ev.kind === "tariff" && !STATE.tariff.active) {
+            STATE.tariff.active = true;
+            STATE.tariff.multiplier = ev.multiplier;
+            STATE.tariff.endsAt = ev.atSec + ev.durationSec;
         }
     }
 }
@@ -167,12 +173,19 @@ export function tickCampaign(dt, elapsed) {
     if (!Number.isFinite(dt) || dt <= 0) return;
 
     if (STATE.gameOver !== null) {
-        resolve(camp, "failed");
+        resolve(camp, "failed", "fail_" + STATE.gameOver);
         return;
     }
 
     const cfg = levelCfg(camp.levelId);
     runScript(cfg, elapsed);
+
+    // Level-scoped floors: survival's bankruptcyAt (-500) is far below a
+    // level's startMoney, so without these a provably-dead run is watched
+    // for its full time limit. Retry latency is difficulty nobody budgeted.
+    // Checked BEFORE the objective sweep only after it — see below — so a
+    // player who has already met every objective can never be killed by one.
+    const floors = cfg.failConditions || CONFIG.campaign.failConditions;
 
     let allDone = true;
     for (const o of camp.objectives) {
@@ -183,15 +196,23 @@ export function tickCampaign(dt, elapsed) {
     if (allDone) {
         resolve(camp, "won");
         markCompleted(camp.levelId);
+    } else if (floors && floors.repBelow !== undefined && STATE.reputation < floors.repBelow) {
+        resolve(camp, "failed", "fail_rep");
+    } else if (floors && floors.moneyBelow !== undefined && STATE.money < floors.moneyBelow) {
+        resolve(camp, "failed", "fail_money");
     } else if (elapsed >= camp.endsAt) {
-        resolve(camp, "failed");
+        resolve(camp, "failed", "fail_time");
     }
 }
 
 // Every resolution path closes a scripted outage window: with the level
 // resolved the schedules stay pinned to Infinity, so nothing else would
 // ever end an active outage and the grid would stay dead behind the modal.
-function resolve(camp, verdict) {
+// reason names WHY it ended, for the debrief.
+function resolve(camp, verdict, reason = null) {
     camp.done = verdict;
+    camp.reason = reason;
     STATE.gridOutage.active = false;
+    STATE.tariff.active = false;
+    STATE.tariff.multiplier = 1;
 }

@@ -180,8 +180,11 @@ export function tickDemand(dt, elapsed) {
     const billingHours = dt / BILLING_HOUR_SEC;
     const eco = CONFIG.economy;
     const missedKw = Math.max(0, STATE.demandKw - STATE.servedKw);
+    // The peak-tariff window (sim/crisis.js) multiplies the METER only —
+    // this is the single line in the whole simulation that reads it.
+    const tariffMul = STATE.tariff.active ? STATE.tariff.multiplier : 1;
     STATE.money += STATE.servedKw * CONFIG.buildings.rack.revenuePerKwhServed * billingHours;
-    STATE.money -= STATE.totalDrawKw * eco.powerCostPerKwh * billingHours;
+    STATE.money -= STATE.totalDrawKw * eco.powerCostPerKwh * tariffMul * billingHours;
     STATE.money -= missedKw * eco.slaPenaltyPerKwhMissed * billingHours;
 
     // Reputation drifts toward the SLA compliance ratio mapped to 0..100.

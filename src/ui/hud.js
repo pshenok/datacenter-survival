@@ -22,6 +22,13 @@ export function getRunStats() {
 export function tickHud() {
     el("hud-money").textContent = `$${Math.floor(STATE.money)}`;
     el("hud-money").className = `text-lg font-bold ${STATE.money >= 0 ? "text-green-400" : "text-red-400"}`;
+    // Peak-tariff pill: the meter is the only thing this event touches, so
+    // it has to be visible on the money, not in a banner that scrolls away.
+    const tariffEl = el("hud-tariff");
+    if (tariffEl) {
+        tariffEl.textContent = i18n.t("tariff_pill", { mult: STATE.tariff.multiplier });
+        tariffEl.classList.toggle("hidden", !STATE.tariff.active);
+    }
     el("hud-rep").textContent = `${Math.round(STATE.reputation)}%`;
     el("hud-demand").textContent = `${STATE.demandKw.toFixed(1)} kW`;
     el("hud-served").textContent = `${STATE.servedKw.toFixed(1)} kW`;
@@ -92,7 +99,12 @@ export function renderInspect(b) {
         if (b.broken) {
             rows.push(`<div class="text-red-400 font-bold mb-1">${i18n.t("insp_broken", { cost: CONFIG.events.cracBreakdown.repairCost })}</div>`);
         }
-        rows.push(row(i18n.t("insp_draw"), `${(b.config.drawKw * b.duty).toFixed(1)} kW`));
+        // The BILLED number, like the rack and generator rows — never a
+        // formula restated here. Under part-load draw an idling CRAC still
+        // costs ~idleDrawKw, and this panel is where a player goes to find
+        // out why their PUE is bad; a recomputed duty×full would deny the
+        // very mechanic it should be exposing.
+        rows.push(row(i18n.t("insp_draw"), `${b.actualKw.toFixed(1)} kW`));
         rows.push(row(i18n.t("insp_duty"), `${Math.round(b.duty * 100)}%`));
     } else if (b.type === "ups") {
         rows.push(row(i18n.t("insp_buffer"), `${b.bufferLeft.toFixed(1)}s / ${b.config.bufferSec}s`));

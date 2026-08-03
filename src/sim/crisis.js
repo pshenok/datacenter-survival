@@ -100,6 +100,27 @@ function tickGridOutage(elapsed, rng) {
     }
 }
 
+// Peak tariff window. Same scheduling pattern as brownout; the only reader
+// is the power-bill line in sim/demand.js, so this event is provably
+// economic-only — no capacity, heat or SLA path touches it.
+function tickTariff(elapsed, rng) {
+    const tf = STATE.tariff;
+    const cfg = CONFIG.events.tariff;
+    if (tf.nextAt === null) {
+        tf.nextAt = elapsed + span(cfg.minIntervalSec, cfg.maxIntervalSec, rng);
+    }
+    if (!tf.active && elapsed >= tf.nextAt) {
+        tf.endsAt = tf.nextAt + span(cfg.minDurationSec, cfg.maxDurationSec, rng);
+        tf.nextAt += span(cfg.minIntervalSec, cfg.maxIntervalSec, rng);
+        tf.multiplier = cfg.multiplier;
+        tf.active = true;
+    }
+    if (tf.active && elapsed >= tf.endsAt) {
+        tf.active = false;
+        tf.multiplier = 1;
+    }
+}
+
 // Fuel logistics: a paid refill lands fuelDeliverySec after the order.
 function tickFuelDeliveries(elapsed) {
     for (const b of STATE.buildings) {
@@ -122,6 +143,7 @@ export function tickCrisis(dt, elapsed, rng = Math.random) {
     tickBrownout(elapsed, rng);
     tickBreakdown(elapsed, rng);
     tickGridOutage(elapsed, rng);
+    tickTariff(elapsed, rng);
     tickFuelDeliveries(elapsed);
 }
 

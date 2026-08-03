@@ -168,23 +168,31 @@ export function tickCampaignUi() {
     const sub = document.getElementById("level-result-sub");
     const next = document.getElementById("level-result-next");
     const retry = document.getElementById("level-result-retry");
+    // The debrief tip: the highest-attention moment in the game, so it
+    // carries the real-world takeaway — and the LOSS path gets its own,
+    // because that is where a player actually wants to know why.
+    const tip = document.getElementById("level-result-tip");
     if (camp.done === "won") {
         title.textContent = i18n.t("level_won_title");
         title.className = "text-3xl font-black mb-2 text-emerald-400";
         sub.textContent = i18n.t("level_won_sub", { time: Math.round(STATE.elapsedGameTime) });
+        if (tip) tip.textContent = i18n.t(`lv_${camp.levelId}_tip`);
         const order = levelOrder();
         const hasNext = order.indexOf(camp.levelId) < order.length - 1;
         next.classList.toggle("hidden", !hasNext);
         retry.classList.add("hidden");
     } else {
-        title.textContent = i18n.t("level_failed_title");
+        // Only a real timeout gets the clock headline; a collapse gets its own.
+        title.textContent = i18n.t(camp.reason === "fail_time" || !camp.reason
+            ? "level_failed_title" : "level_down_title");
         title.className = "text-3xl font-black mb-2 text-red-400";
-        sub.textContent = STATE.gameOver !== null
-            ? i18n.t(STATE.gameOver === "bankrupt" ? "gameover_bankrupt" : "gameover_reputation")
-            : i18n.t("level_failed_sub");
+        // Name what ended the run, not a shrug.
+        sub.textContent = i18n.t(camp.reason || "level_failed_sub");
+        if (tip) tip.textContent = i18n.t(`lv_${camp.levelId}_tip_fail`);
         next.classList.add("hidden");
         retry.classList.remove("hidden");
     }
+    if (tip) tip.classList.toggle("hidden", !tip.textContent || tip.textContent.startsWith("lv_"));
     document.getElementById("level-result-modal").classList.remove("hidden");
 }
 

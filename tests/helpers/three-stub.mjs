@@ -142,6 +142,7 @@ export class TorusGeometry extends Geometry {}
 export class OctahedronGeometry extends Geometry {}
 export class DodecahedronGeometry extends Geometry {}
 export class TetrahedronGeometry extends Geometry {}
+export class PlaneGeometry extends Geometry {}
 export class BufferGeometry extends Geometry {
   setFromPoints(points) {
     this.points = points;
@@ -298,6 +299,7 @@ export class FogExp2 {
 }
 
 export const DoubleSide = 2;
+export const LinearFilter = 1006;
 
 export const THREE_STUB = {
   Vector2,
@@ -317,6 +319,7 @@ export const THREE_STUB = {
   DodecahedronGeometry,
   TetrahedronGeometry,
   BufferGeometry,
+  PlaneGeometry,
   Object3D,
   Group,
   Scene,
@@ -336,4 +339,5 @@ export const THREE_STUB = {
   Raycaster,
   FogExp2,
   DoubleSide,
+  LinearFilter,
 };

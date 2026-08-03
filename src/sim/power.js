@@ -148,7 +148,15 @@ export function resolvePower(dt) {
         if (b.config.chainRole !== "load") continue;
         let req;
         if (b.type === "crac") {
-            req = (b.config.drawKw || 0) * sanitize(b.duty, 0, 1);
+            // Part-load curve, not a straight line: a running CRAC pays its
+            // idle draw (fans, pumps) before it moves any heat at all, and
+            // the variable part rises sub-linearly with duty. A broken unit
+            // is off, not idling — sim/heat.js forces its duty to 0 and it
+            // must not bill.
+            const duty = sanitize(b.duty, 0, 1);
+            const full = b.config.drawKw || 0;
+            const idle = Math.min(b.config.idleDrawKw || 0, full);
+            req = b.broken ? 0 : idle + (full - idle) * Math.pow(duty, b.config.partLoadExp || 1);
         } else {
             req = sanitize(b.assignedKw, 0, b.config.capacityKw || 0);
         }
