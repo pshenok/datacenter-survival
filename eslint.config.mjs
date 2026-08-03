@@ -28,7 +28,8 @@ export default [
     },
   },
   {
-    files: ["tests/**/*.mjs", "eslint.config.mjs"],
+    // Node-side tooling: the headless test suite and the demo recorder.
+    files: ["tests/**/*.mjs", "tools/**/*.mjs", "eslint.config.mjs"],
     languageOptions: {
       sourceType: "module",
       globals: {

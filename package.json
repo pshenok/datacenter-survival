@@ -6,13 +6,16 @@
   "scripts": {
     "lint": "eslint .",
     "test": "vitest run",
-    "check": "npm run lint && npm run test"
+    "check": "npm run lint && npm run test",
+    "demo:capture": "node tools/capture-demo.mjs",
+    "demo:gif": "./tools/make-gif.sh"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.7.0",
     "globals": "^17.7.0",
     "happy-dom": "^20.11.1",
+    "playwright": "^1.62.1",
     "vitest": "^4.1.10"
   }
 }
