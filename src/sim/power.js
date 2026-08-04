@@ -32,6 +32,7 @@
 // Pure module: no DOM, no THREE, no timers, no randomness — node-env vitest
 // imports it directly.
 
+import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
 
 // Legal wire edges: parent chainRole -> allowed child chainRoles.
@@ -109,6 +110,24 @@ function sanitize(value, min, max) {
     return Math.min(Math.max(n, min), max);
 }
 
+// Which utility substation a grid feed hangs off. Derived from PLACEMENT,
+// not from a control the player has to discover: the left half of the floor
+// is fed by substation A, the right half by B. "Two independent feeds" then
+// literally means putting them on opposite sides of the room — the map
+// geometry becomes the teaching device.
+export function utilityOf(building) {
+    return building.gx < CONFIG.gridSize / 2 ? "A" : "B";
+}
+
+// Is this grid feed dark right now? A scoped outage only takes down its own
+// substation; the default "all" keeps the original behaviour, which the
+// early levels (and the mid-outage exploit test) are written against.
+export function feedIsDark(building) {
+    if (!STATE.gridOutage.active) return false;
+    const scope = STATE.gridOutage.scope || "all";
+    return scope === "all" || scope === utilityOf(building);
+}
+
 // Is a building's PRIMARY parent path dead? Walks parentIds to the root,
 // ignoring UPS buffers — a bridged subtree still has a dead primary, which
 // is exactly when the transfer switch must start its cutover countdown.
@@ -120,7 +139,7 @@ function primaryPathDead(b, byId) {
         if (node.parentId === "grid") {
             if (node.config.chainRole !== "source") return true;
             if (node.type === "generator") return node.fuelLiters <= 0;
-            return STATE.gridOutage.active;
+            return feedIsDark(node);
         }
         if (node.parentId === null || ++hops > maxHops) return true;
         node = byId.get(node.parentId);
@@ -257,10 +276,9 @@ export function resolvePower(dt) {
     // outage (that is their whole point) but die on an empty tank. Anything
     // with no live parent path is likewise a dead root. A final sweep
     // catches malformed leftovers.
-    const gridDown = STATE.gridOutage.active;
     for (const b of STATE.buildings) {
         if (b.config.chainRole !== "source") continue;
-        const live = b.type === "generator" ? b.fuelLiters > 0 : !gridDown;
+        const live = b.type === "generator" ? b.fuelLiters > 0 : !feedIsDark(b);
         deliver(b, live, live ? Infinity : 0);
     }
     for (const b of STATE.buildings) {

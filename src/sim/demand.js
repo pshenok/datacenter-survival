@@ -32,6 +32,7 @@
 import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
 import { attributeLosses } from "./attribution.js";
+import { feedIsDark } from "./power.js";
 
 // Seconds of game time per billing "hour" (see header).
 const BILLING_HOUR_SEC = 60;
@@ -103,7 +104,7 @@ export function chainAlive(building, byId) {
             // a cut chain. Generators are outage-immune but die dry.
             if (node.config.chainRole !== "source") return false;
             if (node.type === "generator") return node.fuelLiters > 0;
-            return !STATE.gridOutage.active;
+            return !feedIsDark(node);
         }
         // A UPS with charge is a live root for assignment purposes: work must
         // keep flowing to its subtree during an upstream blip, or the buffer

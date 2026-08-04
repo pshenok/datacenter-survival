@@ -247,4 +247,12 @@ export const EN_TRANSLATIONS = {
     "lv_cold_room_learn": "Cooling capacity means nothing without proximity. Hot and cold aisles are a layout, not a setting.",
     "lv_cold_room_tip": "This is the most common real-world cooling ticket there is: plenty of tonnage installed, none of it where the load moved to.",
     "lv_cold_room_tip_fail": "Press T. The overlay shows exactly where the heat is and exactly where your cooling is spending its watts — and in this room those are two different places.",
+
+    "lv_two_utilities": "Two Utilities",
+    "lv_two_utilities_brief": "Two feeds, one substation. That is not redundancy — it is decoration.",
+    "lv_two_utilities_scenario": "The room came with two complete chains, and the handover notes call it N+1. Then substation A drops — twice — and the whole floor goes with it, because both feeds hang off the same side of the hall. Buy a feed on the FAR side and get the room behind it. Only what you serve while the lights are out counts, and half a room is not enough.",
+    "lv_two_utilities_learn": "A second feed is only redundant if it comes from a different substation. On this floor the left half is utility A and the right half is B — geography is the boundary.",
+    "lv_two_utilities_tip": "This is the Tier III conversation in miniature. Two utility feeds into one substation is a single point of failure with a second invoice attached.",
+    "lv_two_utilities_tip_fail": "Saving one aisle is not saving the room: partial redundancy fails the same audit as none. Everything that must survive has to sit behind the surviving feed.",
+    "faq_events_8": "Grid outages have a SCOPE. A city-wide one kills every feed; a substation outage kills only the feeds on that half of the floor (left = utility A, right = utility B). That is what makes a second feed on the far side worth its price — and what makes two feeds side by side worth nothing.",
 };

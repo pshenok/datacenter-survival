@@ -45,7 +45,8 @@ function tabContent() {
             <p>${i18n.t("faq_events_4", { cost: CONFIG.events.cracBreakdown.repairCost, wait: CONFIG.events.cracBreakdown.selfRepairSec })}</p>
             <p>${i18n.t("faq_events_5")}</p>
             <p>${i18n.t("faq_events_6")}</p>
-            <p>${i18n.t("faq_events_7")}</p>`;
+            <p>${i18n.t("faq_events_7")}</p>
+            <p>${i18n.t("faq_events_8")}</p>`;
         case "losses": return `
             <p>${i18n.t("faq_loss_1")}</p>
             <p>${i18n.t("faq_loss_2")}</p>

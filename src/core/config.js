@@ -207,7 +207,7 @@ export const CONFIG = {
         chapters: [
             { id: "ch1", titleKey: "ch1_title", levels: ["first_watt", "hot_aisle", "the_bill", "sag", "dark_chain"] },
             { id: "ch2", titleKey: "ch2_title", levels: ["fuel_clock"] },
-            { id: "ch3", titleKey: "ch3_title", levels: ["over_cooled", "one_bus", "cold_room"] },
+            { id: "ch3", titleKey: "ch3_title", levels: ["over_cooled", "one_bus", "cold_room", "two_utilities"] },
         ],
         levels: {
             // Teach: the delivery chain. Wire feed→transformer→ups→pdu→rack
@@ -378,6 +378,37 @@ export const CONFIG = {
                     wires: [[0, 1], [1, 2], [1, 3], [2, 4], [2, 5], [2, 6], [3, 7], [3, 8]],
                 },
                 objectives: [{ type: "no_throttle", holdSec: 40, afterSec: 60 }],
+            },
+
+            // Teach: two feeds only buy you anything if they come from
+            // INDEPENDENT substations. The room arrives with both feeds on
+            // the same side of the floor (= same utility), which reads as
+            // redundant and is not: substation A goes dark twice and takes
+            // the whole room with it. The fix is to move one feed across the
+            // hall — the map geometry IS the utility boundary.
+            two_utilities: {
+                startMoney: 260,
+                timeLimitSec: 200,
+                demandKw: 12,
+                script: [
+                    { atSec: 45, kind: "outage", durationSec: 25, scope: "A" },
+                    { atSec: 120, kind: "outage", durationSec: 25, scope: "A" },
+                ],
+                banned: ["generator"],
+                preBuilt: {
+                    buildings: [
+                        { type: "grid_feed", gx: 4, gz: 6 },
+                        { type: "grid_feed", gx: 4, gz: 12 },
+                        { type: "transformer", gx: 8, gz: 6 },
+                        { type: "transformer", gx: 8, gz: 12 },
+                        { type: "pdu", gx: 12, gz: 6 },
+                        { type: "pdu", gx: 12, gz: 12 },
+                        { type: "rack", gx: 16, gz: 6 },
+                        { type: "rack", gx: 16, gz: 12 },
+                    ],
+                    wires: [[0, 2], [1, 3], [2, 4], [3, 5], [4, 6], [5, 7]],
+                },
+                objectives: [{ type: "serve_kwh_during_event", event: "outage", target: 7 }],
             },
         },
     },

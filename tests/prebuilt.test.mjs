@@ -15,6 +15,7 @@ import { tickContracts } from "../src/sim/contracts.js";
 import { tickCampaign, startLevelState, levelCfg } from "../src/campaign/campaign.js";
 import { applyPreBuilt, preBuiltSpec, hasPreBuilt } from "../src/campaign/prebuilt.js";
 import { placeBuilding, demolishBuilding, connect, resetWireIds } from "../src/sim/build.js";
+import { utilityOf, feedIsDark } from "../src/sim/power.js";
 
 const DT = 0.05;
 const rngZero = () => 0;
@@ -173,10 +174,70 @@ describe("L9 cold_room — cooling in the wrong place is no cooling", () => {
     });
 });
 
+describe("L10 two_utilities — redundancy that isn't", () => {
+    it("LOSE: two feeds on the SAME side of the floor share a substation", () => {
+        start("two_utilities");
+        // Both feeds are A-side as handed over, so an A outage takes the
+        // whole room — the redundancy is cosmetic.
+        expect(of("grid_feed").every((f) => utilityOf(f) === "A")).toBe(true);
+        runLevel("two_utilities");
+        expect(STATE.campaign.done).toBe("failed");
+        expect(STATE.campaign.objectives[0].progress).toBeLessThan(0.1);
+    });
+
+    it("LOSE: half a fix is not redundancy — saving one aisle still misses", () => {
+        const made = start("two_utilities");
+        const feedB = placeBuilding("grid_feed", 20, 12);
+        connect(feedB, made[3]);          // only the second chain moves over
+        runLevel("two_utilities");
+        expect(STATE.campaign.done).toBe("failed");
+        // It served through the dark — just not enough of the room.
+        expect(STATE.campaign.objectives[0].progress).toBeGreaterThan(3);
+    });
+
+    it("WIN: one feed on the far side, with the whole room behind it", () => {
+        const made = start("two_utilities");
+        const feedB = placeBuilding("grid_feed", 20, 12);
+        expect(utilityOf(feedB)).toBe("B");
+        connect(feedB, made[3]);          // transformer 2 now hangs off B…
+        connect(made[3], made[4]);        // …and so does the first PDU
+        runLevel("two_utilities");
+        expect(STATE.campaign.done).toBe("won");
+    });
+
+    it("a scoped outage kills only its own substation", () => {
+        start("two_utilities");
+        const feedB = placeBuilding("grid_feed", 20, 12);
+        STATE.gridOutage.active = true;
+        STATE.gridOutage.scope = "A";
+        STATE.gridOutage.endsAt = Infinity;
+        expect(feedIsDark(of("grid_feed")[0])).toBe(true);    // A-side, gx 4
+        expect(feedIsDark(feedB)).toBe(false);                // B-side, gx 20
+        STATE.gridOutage.scope = "all";
+        expect(feedIsDark(feedB)).toBe(true);                 // the old behaviour
+    });
+});
+
 describe("chapter wiring", () => {
-    it("puts every diagnosis level in Chapter 3, in order, all prebuilt", () => {
+    it("puts every diagnosis level in Chapter 3, all prebuilt", () => {
         const ch3 = CONFIG.campaign.chapters.find((c) => c.id === "ch3");
-        expect(ch3.levels).toEqual(["over_cooled", "one_bus", "cold_room"]);
+        expect(ch3.levels).toEqual(["over_cooled", "one_bus", "cold_room", "two_utilities"]);
         for (const id of ch3.levels) expect(hasPreBuilt(id)).toBe(true);
+    });
+
+    it("every level's preBuilt geometry stays on the floor and never doubles up", () => {
+        for (const [id, cfg] of Object.entries(CONFIG.campaign.levels)) {
+            if (!cfg.preBuilt) continue;
+            const seen = new Set();
+            for (const b of cfg.preBuilt.buildings) {
+                expect(b.gx, `${id}`).toBeGreaterThanOrEqual(0);
+                expect(b.gx, `${id}`).toBeLessThan(CONFIG.gridSize);
+                expect(b.gz, `${id}`).toBeGreaterThanOrEqual(0);
+                expect(b.gz, `${id}`).toBeLessThan(CONFIG.gridSize);
+                const key = `${b.gx},${b.gz}`;
+                expect(seen.has(key), `${id}: two buildings on ${key}`).toBe(false);
+                seen.add(key);
+            }
+        }
     });
 });

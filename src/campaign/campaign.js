@@ -117,6 +117,9 @@ function runScript(cfg, elapsed) {
             STATE.heatwave.endsAt = ev.atSec + ev.durationSec;
         } else if (ev.kind === "outage" && !STATE.gridOutage.active) {
             STATE.gridOutage.active = true;
+            // Default "all" keeps every earlier level (and the mid-outage
+            // exploit test) on exactly the behaviour they were written for.
+            STATE.gridOutage.scope = ev.scope || "all";
             STATE.gridOutage.endsAt = ev.atSec + ev.durationSec;
         } else if (ev.kind === "tariff" && !STATE.tariff.active) {
             STATE.tariff.active = true;
