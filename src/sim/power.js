@@ -141,6 +141,12 @@ function primaryPathDead(b, byId) {
             if (node.type === "generator") return node.fuelLiters <= 0;
             return feedIsDark(node);
         }
+        // An open breaker anywhere up the primary path is a dead path —
+        // the same rule demand.js chainAlive follows. Without this the
+        // generator's cutover clock resets every tick while assignment keeps
+        // feeding the subtree work nobody delivers: the assigned-but-never-
+        // served starvation the integration suite exists to prevent.
+        if (node.tripped) return true;
         if (node.parentId === null || ++hops > maxHops) return true;
         node = byId.get(node.parentId);
     }
@@ -250,6 +256,17 @@ export function resolvePower(dt) {
                     b.bufferLeft = Math.max(0, b.bufferLeft - dt);
                 }
             }
+        }
+
+        // An OPEN breaker is dead, not merely zero-capacity: without this the
+        // link keeps powered=true and hands a "live" chain to its now-idle
+        // subtree, so racks behind an open breaker render green, skip the
+        // NOT POWERED row, and keep counting toward no-throttle streaks
+        // while serving nothing. Placed after the UPS clause so a tripped
+        // UPS cannot self-grant from its buffer either.
+        if (b.tripped) {
+            outLive = false;
+            outKw = 0;
         }
 
         b.actualKw = outKw; // carried kW through this link/source

@@ -108,7 +108,14 @@ function tick(dt) {
     }
 
     // Grid outage (survival-random or campaign-scripted): banner on both edges.
-    if (STATE.gridOutage.active && !outageWasActive) showBanner(i18n.t("outage_start"), 5000);
+    if (STATE.gridOutage.active && !outageWasActive) {
+        // A substation outage is NOT a city-wide blackout, and saying so is
+        // the whole point of the level that teaches independent feeds.
+        const scoped = STATE.gridOutage.scope !== "all";
+        showBanner(scoped
+            ? i18n.t("outage_start_scoped", { utility: STATE.gridOutage.scope })
+            : i18n.t("outage_start"), 5000);
+    }
     if (!STATE.gridOutage.active && outageWasActive) showBanner(i18n.t("outage_end"), 2500);
     outageWasActive = STATE.gridOutage.active;
 
@@ -175,6 +182,7 @@ function clearWorld() {
 function beginRun() {
     document.getElementById("main-menu").classList.add("hidden");
     clearWorld();
+    resetCamera();      // a campaign level's focus must not follow you out
     STATE.isRunning = true;
     STATE.timeScale = 0;
     setTool("select");

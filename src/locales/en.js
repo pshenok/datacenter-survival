@@ -224,7 +224,7 @@ export const EN_TRANSLATIONS = {
     "ledger_title": "Where the ${total} went",
     "faq_tab_losses": "Diagnosis",
     "faq_loss_1": "Every kW of demand you fail to serve is charged to you — and named. Badges float over the building responsible the moment it happens, and the ledger on the pause menu, the level result and the game-over screen totals them up in dollars.",
-    "faq_loss_2": "TOO HOT: racks throttled by heat. AT CAPACITY: a link hit its kW rating and clipped everything below it. GRID SAG: that link was a grid feed during a brownout. NO POWER / BATTERY FLAT / TANK DRY: the chain was dead, the UPS buffer was spent, or the generator ran out of fuel. NOT ENOUGH RACKS: the room is simply too small for the demand.",
+    "faq_loss_2": "TOO HOT: racks throttled by heat. AT CAPACITY: a link hit its kW rating and clipped everything below it. GRID SAG: that link was a grid feed during a brownout. NO POWER / BATTERY FLAT / TANK DRY: the chain was dead, the UPS buffer was spent, or the generator ran out of fuel. NOT ENOUGH RACKS: the room is simply too small for the demand. BREAKER OPEN: a link carried more than its rating for too long and opened; everything below it is dark until you click it to reset — and it opens again unless you fix the overload.",
     "faq_loss_3": "Amber means the machine protected itself and kept working; red means the work was dropped. Read the ledger before you build — the biggest number is the only thing worth fixing.",
     "obj_serve_during": "Serve {target} kWh WHILE the grid is down",
 
@@ -264,4 +264,8 @@ export const EN_TRANSLATIONS = {
 
     "obj_bonus": "Bonus",
     "obj_money_left": "Finish with ${target} in the bank",
+
+    "outage_start_scoped": "SUBSTATION {utility} DOWN — the feeds on that side of the hall are dark. An independent feed keeps serving",
+    "insp_utility": "Substation",
+    "insp_feed_dark": "SUBSTATION DOWN — this feed is dark",
 };

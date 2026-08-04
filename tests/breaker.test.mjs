@@ -171,4 +171,106 @@ describe("an open breaker is a dead root", () => {
         for (let i = 0; i < 3 / DT; i++) step();
         expect(racks.every((r) => r.assignedKw === 0)).toBe(true);
     });
+
+    it("everything below it reads UNPOWERED, not merely idle", () => {
+        // Zeroing the capacity is not enough: a tripped link that stays
+        // 'powered' hands a live chain to its now-idle subtree, so racks
+        // render green, skip the NOT POWERED row, and keep feeding
+        // no-throttle streaks while the room serves nothing.
+        const cap = CONFIG.buildings.pdu.capacityKw;
+        const { pdu, racks } = bus(6, cap * 2);
+        timeToTrip(pdu, 30);
+        for (let i = 0; i < 3 / DT; i++) step();
+        expect(pdu.powered).toBe(false);
+        expect(racks.every((r) => r.powered === false)).toBe(true);
+        expect(STATE.servedKw).toBe(0);
+    });
+
+    it("a CRAC below it stops drawing — the delivery-side gate, which chainAlive cannot cover", () => {
+        // CRACs are assigned nothing by demand.js (they request their own
+        // draw), so only the power-side cap=0 keeps them off a dead bus.
+        const cap = CONFIG.buildings.pdu.capacityKw;
+        const { pdu } = bus(6, cap * 2);
+        const crac = place("crac", 12, 9);
+        wireBuildings(pdu, crac);
+        crac.duty = 1;
+        timeToTrip(pdu, 30);
+        for (let i = 0; i < 3 / DT; i++) step();
+        expect(crac.actualKw).toBe(0);
+        expect(crac.powered).toBe(false);
+        expect(STATE.totalDrawKw).toBe(0);
+    });
+
+    it("a tripped UPS is not a live root either — the trip must beat the buffer clause", () => {
+        // chainAlive checks `tripped` BEFORE its UPS-with-charge clause. If
+        // that order flipped, a tripped UPS would read as live purely because
+        // it still has battery, and assignment would starve the room.
+        STATE.demandFixedKw = 40;
+        const feed = place("grid_feed", 2, 5);
+        const xf = place("transformer", 5, 5);
+        const ups = place("ups", 8, 5);
+        const pdu = place("pdu", 11, 5);
+        wireBuildings(feed, xf);
+        wireBuildings(xf, ups);
+        wireBuildings(ups, pdu);
+        const racks = [];
+        for (let i = 0; i < 8; i++) {
+            const r = place("rack", 14 + i, 5);
+            wireBuildings(pdu, r);
+            racks.push(r);
+        }
+        // Trip the UPS directly, with its buffer still full.
+        ups.tripped = true;
+        expect(ups.bufferLeft).toBeGreaterThan(0);
+        for (let i = 0; i < 3 / DT; i++) step();
+        expect(racks.every((r) => r.assignedKw === 0)).toBe(true);
+        expect(STATE.servedKw).toBe(0);
+    });
+
+    it("an UPSTREAM trip starts the standby generator's cutover and it carries the bus", () => {
+        // The generator exists to carry a dead primary path, and an open
+        // breaker upstream IS a dead path. If primaryPathDead ignored trips,
+        // the cutover clock would reset every tick while demand.js kept
+        // assigning the subtree work nobody delivers — the assigned-but-
+        // never-served starvation the integration suite exists to prevent.
+        STATE.demandFixedKw = 12;
+        const feed = place("grid_feed", 2, 5);
+        const xf = place("transformer", 5, 5);
+        const pdu = place("pdu", 8, 5);
+        wireBuildings(feed, xf);
+        wireBuildings(xf, pdu);
+        const racks = [place("rack", 12, 4), place("rack", 12, 6)];
+        racks.forEach((r) => wireBuildings(pdu, r));
+        const gen = place("generator", 2, 9);
+        wireBuildings(gen, pdu);           // standby edge onto the bus
+        for (let i = 0; i < 5 / DT; i++) step();
+        expect(gen.actualKw).toBe(0);      // idle while the primary is fine
+
+        xf.tripped = true;                 // the transformer above it opens…
+        for (let i = 0; i < (CONFIG.buildings.generator.cutoverSec + 4) / DT; i++) step();
+        // …and the transfer switch picks the bus up, which only happens if
+        // primaryPathDead noticed the trip.
+        expect(gen.actualKw).toBeGreaterThan(0);
+        expect(STATE.servedKw).toBeGreaterThan(0);
+    });
+
+    it("a generator cannot paper over the breaker BELOW it — an open bus carries nothing", () => {
+        // The counterpart: if the tripped link is the bus itself, no source
+        // upstream of it can help. An open breaker protects its own load.
+        STATE.demandFixedKw = 12;
+        const feed = place("grid_feed", 2, 5);
+        const xf = place("transformer", 5, 5);
+        const pdu = place("pdu", 8, 5);
+        wireBuildings(feed, xf);
+        wireBuildings(xf, pdu);
+        for (const [gx, gz] of [[12, 4], [12, 6]]) wireBuildings(pdu, place("rack", gx, gz));
+        const gen = place("generator", 2, 9);
+        wireBuildings(gen, pdu);
+        for (let i = 0; i < 5 / DT; i++) step();
+
+        pdu.tripped = true;
+        for (let i = 0; i < (CONFIG.buildings.generator.cutoverSec + 4) / DT; i++) step();
+        expect(STATE.servedKw).toBe(0);
+        expect(gen.actualKw).toBe(0);
+    });
 });

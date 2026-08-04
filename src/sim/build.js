@@ -29,7 +29,11 @@ export function isBanned(type) {
 export function placeBuilding(type, gx, gz, { free = false } = {}) {
     const cfg = CONFIG.buildings[type];
     if (!cfg) return "unknown";
-    if (isBanned(type)) return "banned";
+    // `free` is the preBuilt path: a level may HAND you the very thing it
+    // forbids you to build more of (two_utilities bans generators and still
+    // starts you with feeds). The ban gates the player's toolbar, not the
+    // scenery — and applyPreBuilt would otherwise throw at level start.
+    if (!free && isBanned(type)) return "banned";
     if (!free && STATE.money < cfg.cost) return "poor";
     if (STATE.buildings.some((b) => b.gx === gx && b.gz === gz)) return "occupied";
     const b = new Building(type, gx, gz);

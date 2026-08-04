@@ -96,7 +96,11 @@ export function tickBadges(dt) {
         const host = STATE.buildings.find((x) => x.id === b.buildingId);
         // Only age while time is actually moving; a paused board holds.
         if (STATE.timeScale > 0) b.life -= dt;
-        if (!host || !host.mesh || b.life <= 0) {
+        // A badge reports a FACT, so it dies with its host, with its clock —
+        // or the moment the player UNDOES it, even on a paused board, or
+        // BREAKER OPEN hangs over a link that was just reset.
+        const undone = b.cause === "breaker_tripped" && host && !host.tripped;
+        if (!host || !host.mesh || b.life <= 0 || undone) {
             disposeBadge(b);
             badges.splice(i, 1);
             continue;

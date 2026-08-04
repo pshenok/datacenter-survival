@@ -6,6 +6,7 @@ import { STATE } from "../core/state.js";
 import { i18n } from "../i18n.js";
 import { lossLedger } from "../sim/attribution.js";
 import { LOSS_CAUSES } from "../core/loss-causes.js";
+import { utilityOf, feedIsDark } from "../sim/power.js";
 
 const el = (id) => document.getElementById(id);
 let bestPue = Infinity;
@@ -153,6 +154,15 @@ export function renderInspect(b) {
         }
     } else {
         rows.push(row(i18n.t("insp_draw"), `cap ${b.config.capacityKw} kW`));
+    }
+    // Which substation a feed hangs off is derived from WHERE it stands, so
+    // it has to be legible somewhere — otherwise a one-tile-wrong fix looks
+    // identical to a correct one.
+    if (b.type === "grid_feed") {
+        rows.push(row(i18n.t("insp_utility"), utilityOf(b)));
+        if (feedIsDark(b)) {
+            rows.push(`<div class="text-red-400 font-bold mt-1">${i18n.t("insp_feed_dark")}</div>`);
+        }
     }
     panel.innerHTML = rows.join("");
     panel.classList.remove("hidden");
