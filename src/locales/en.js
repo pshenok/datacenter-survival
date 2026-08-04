@@ -261,4 +261,7 @@ export const EN_TRANSLATIONS = {
     "breaker_trip": "{name} BREAKER TRIPPED — click it to reset, but fix the overload or it opens again",
     "breaker_reset": "Breaker reset — watch the load on that link",
     "faq_power_4": "Links have BREAKERS. A mild overload just clips the subtree, but a sustained one opens the link and everything below it goes dark until you click it to reset. Resetting without fixing the cause simply trips it again — the fix is less load or another link to share it.",
+
+    "obj_bonus": "Bonus",
+    "obj_money_left": "Finish with ${target} in the bank",
 };

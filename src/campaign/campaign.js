@@ -30,6 +30,9 @@ import { STATE } from "../core/state.js";
 const BILLING_HOUR_SEC = 60;    // same scale as sim/demand.js
 const PUE_MIN_IT_KW = 0.05;     // below this, PUE is undefined (HUD rule)
 const DONE_KEY = "dc_campaign_done";
+// Bonuses live under their OWN key: dc_campaign_done is a plain array of
+// level ids and changing its shape would break every existing save.
+const BONUS_KEY = "dc_campaign_bonus";
 
 export function levelCfg(id) {
     return CONFIG.campaign.levels[id] || null;
@@ -62,6 +65,34 @@ function markCompleted(id) {
     } catch { /* storage unavailable — progress just doesn't persist */ }
 }
 
+// ---- bonus objectives ----------------------------------------------------
+// A level's primary objectives teach the recipe; a bonus asks for the
+// trade-off on top — "serve it AND hold PUE under 1.25". Optional by
+// construction: they never gate a win, and every one of them is proven
+// beatable AND genuinely skippable by a machine-play pair.
+export function earnedBonuses() {
+    try {
+        if (typeof localStorage === "undefined") return {};
+        const raw = localStorage.getItem(BONUS_KEY);
+        const obj = raw ? JSON.parse(raw) : {};
+        return obj && typeof obj === "object" ? obj : {};
+    } catch {
+        return {};
+    }
+}
+
+function markBonuses(levelId, ids) {
+    if (ids.length === 0) return;
+    try {
+        if (typeof localStorage === "undefined") return;
+        const all = earnedBonuses();
+        const have = new Set(all[levelId] || []);
+        for (const id of ids) have.add(id);
+        all[levelId] = [...have];
+        localStorage.setItem(BONUS_KEY, JSON.stringify(all));
+    } catch { /* storage unavailable — the star just isn't kept */ }
+}
+
 // The first level is always open; each next unlocks when its predecessor in
 // chapter order is completed.
 export function isLevelUnlocked(id, done = completedLevels()) {
@@ -92,6 +123,7 @@ export function startLevelState(id) {
     STATE.campaign = {
         levelId: id,
         objectives: cfg.objectives.map((o) => ({ ...o, progress: 0, done: false })),
+        bonuses: (cfg.bonuses || []).map((o) => ({ ...o, progress: 0, done: false })),
         endsAt: cfg.timeLimitSec,
         done: null,
         reason: null,
@@ -160,6 +192,12 @@ function evaluateObjective(o, dt, elapsed) {
             if (o.progress >= o.holdSec) o.done = true;
             break;
         }
+        // Evaluated only when the level resolves (see resolve()): "finish
+        // with money left" is a statement about the end, not a streak, and
+        // it gives bonuses an axis the primary objectives never use — buy
+        // less, risk more.
+        case "money_at_least":
+            break;
         case "no_throttle": {
             if (gated) {
                 o.progress = 0;
@@ -207,10 +245,20 @@ export function tickCampaign(dt, elapsed) {
         if (!o.done) evaluateObjective(o, dt, elapsed);
         if (!o.done) allDone = false;
     }
+    // Bonuses are scored on the same facts but excluded from allDone —
+    // optional by construction, not by convention.
+    for (const b of camp.bonuses) {
+        if (!b.done) evaluateObjective(b, dt, elapsed);
+    }
 
     if (allDone) {
+        // End-state bonuses are judged now, on the books as they close.
+        for (const b of camp.bonuses) {
+            if (b.type === "money_at_least" && STATE.money >= b.target) b.done = true;
+        }
         resolve(camp, "won");
         markCompleted(camp.levelId);
+        markBonuses(camp.levelId, camp.bonuses.filter((b) => b.done).map((b) => b.id));
     } else if (floors && floors.repBelow !== undefined && STATE.reputation < floors.repBelow) {
         resolve(camp, "failed", "fail_rep");
     } else if (floors && floors.moneyBelow !== undefined && STATE.money < floors.moneyBelow) {

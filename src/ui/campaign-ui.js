@@ -4,7 +4,7 @@
 // hands us a freeze() callback so play/pause UI stays game.js's business.
 import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
-import { completedLevels, isLevelUnlocked, levelOrder } from "../campaign/campaign.js";
+import { completedLevels, isLevelUnlocked, levelOrder, earnedBonuses } from "../campaign/campaign.js";
 import { showBanner, renderLossLedger } from "./hud.js";
 import { i18n } from "../i18n.js";
 
@@ -42,6 +42,7 @@ export function renderCampaignLevels() {
     const host = document.getElementById("campaign-levels");
     if (!host) return;
     const done = completedLevels();
+    const earned = earnedBonuses();
     const order = levelOrder();
     host.innerHTML = CONFIG.campaign.chapters.map((ch) => {
         const rows = ch.levels.map((id) => {
@@ -93,13 +94,9 @@ export function openBriefing(id) {
     document.getElementById("briefing-title").textContent = i18n.t("lv_" + id);
     document.getElementById("briefing-scenario").textContent = i18n.t("lv_" + id + "_scenario");
     document.getElementById("briefing-learn").textContent = i18n.t("lv_" + id + "_learn");
-    const goals = cfg.objectives.map((o) => {
-        if (o.type === "serve_kwh") return i18n.t("obj_serve_kwh", { target: o.target });
-        if (o.type === "serve_kwh_during_event") return i18n.t("obj_serve_during", { target: o.target });
-        if (o.type === "pue_below") return i18n.t("obj_pue_below", { value: o.value, hold: o.holdSec });
-        return i18n.t("obj_no_throttle", { hold: o.holdSec });
-    });
+    const goals = cfg.objectives.map(objectiveLabel);
     goals.push(i18n.t("brief_time", { s: cfg.timeLimitSec }));
+    for (const b of cfg.bonuses || []) goals.push(`☆ ${objectiveLabel(b)}`);
     document.getElementById("briefing-goals").innerHTML =
         goals.map((g) => `<li>${g}</li>`).join("");
     document.getElementById("briefing-start").onclick = () => window.launchCampaignLevel(id);
@@ -116,6 +113,20 @@ export function onLevelStart(id) {
     document.getElementById("objectives-panel").classList.remove("hidden");
     renderObjectives();
     showBanner(i18n.t("lv_" + id + "_brief"), 7000);
+}
+
+function objectiveLabel(o) {
+    if (o.type === "serve_kwh") return i18n.t("obj_serve_kwh", { target: o.target });
+    if (o.type === "serve_kwh_during_event") return i18n.t("obj_serve_during", { target: o.target });
+    if (o.type === "pue_below") return i18n.t("obj_pue_below", { value: o.value, hold: o.holdSec });
+    if (o.type === "money_at_least") return i18n.t("obj_money_left", { target: o.target });
+    return i18n.t("obj_no_throttle", { hold: o.holdSec });
+}
+
+function bonusRow(o) {
+    const mark = o.done ? "★" : "☆";
+    const cls = o.done ? "text-amber-300" : "text-gray-500";
+    return `<div class="${cls} text-[11px] leading-5">${mark} ${objectiveLabel(o)}</div>`;
 }
 
 function objectiveRow(o) {
@@ -151,6 +162,10 @@ function renderObjectives() {
     host.innerHTML =
         `<div class="text-[10px] text-emerald-300/80 uppercase tracking-wide mb-1">${i18n.t("lv_" + camp.levelId)}</div>` +
         camp.objectives.map(objectiveRow).join("") +
+        (camp.bonuses.length
+            ? `<div class="text-[10px] text-amber-300/70 uppercase tracking-wide mt-2 mb-0.5">${i18n.t("obj_bonus")}</div>`
+              + camp.bonuses.map(bonusRow).join("")
+            : "") +
         `<div class="text-[10px] text-gray-500 mt-1">${i18n.t("obj_time_left", { s: left })}</div>`;
 }
 
@@ -181,6 +196,9 @@ export function tickCampaignUi() {
         title.className = "text-3xl font-black mb-2 text-emerald-400";
         sub.textContent = i18n.t("level_won_sub", { time: Math.round(STATE.elapsedGameTime) });
         if (tip) tip.textContent = i18n.t(`lv_${camp.levelId}_tip`);
+        if (camp.bonuses.length) {
+            sub.textContent += "  " + camp.bonuses.map((b) => (b.done ? "★" : "☆")).join("");
+        }
         const order = levelOrder();
         const hasNext = order.indexOf(camp.levelId) < order.length - 1;
         next.classList.toggle("hidden", !hasNext);

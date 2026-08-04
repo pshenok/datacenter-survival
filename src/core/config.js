@@ -277,6 +277,7 @@ export const CONFIG = {
                 demandKw: 20,
                 script: [{ atSec: 45, kind: "brownout", durationSec: 60, factor: 0.35 }],
                 objectives: [{ type: "serve_kwh", target: 46 }],
+                bonuses: [{ id: "headroom", type: "serve_kwh_during_event", event: "brownout", target: 14 }],
             },
             // Teach: batteries ride an OUTAGE. The city feed dies three times;
             // only a chain with a charged UPS serves through the dark. The
@@ -296,6 +297,12 @@ export const CONFIG = {
                 // calm minutes cannot pay for the lesson this level teaches.
                 // 18s of blackout at 12 kW is 3.6 kWh on the table.
                 objectives: [{ type: "serve_kwh_during_event", event: "outage", target: 3 }],
+                // A bonus on a DIFFERENT axis than the objective — a harder
+                // target of the same type is unreachable, because meeting the
+                // primary ends the level. Bridging the dark AND still having
+                // money left is the real trade-off: every extra CRAC or
+                // second chain you buy comes out of this.
+                bonuses: [{ id: "thrift", type: "money_at_least", target: 450 }],
             },
             // Teach: batteries bridge, generators carry, fuel is the real
             // capacity of your backup. Two 35s outages: the UPS covers 8s of

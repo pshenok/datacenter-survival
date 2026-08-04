@@ -58,7 +58,7 @@ export const STATE = {
 
     // campaign (owned by campaign/campaign.js). levelId === null means
     // survival/sandbox — every campaign hook is a no-op.
-    campaign: { levelId: null, objectives: [], endsAt: 0, done: null, reason: null },
+    campaign: { levelId: null, objectives: [], bonuses: [], endsAt: 0, done: null, reason: null },
 
     // Loss attribution (owned by sim/attribution.js). tickKw decomposes THIS
     // tick's unserved demand by cause and must sum to it exactly; totalKwh is
@@ -91,7 +91,7 @@ export function resetState() {
     STATE.gridOutage = { active: false, endsAt: 0, nextAt: null, scope: "all" };
     STATE.tariff = { active: false, multiplier: 1, endsAt: 0, nextAt: null };
     STATE.contract = { id: 0, key: null, progress: 0, target: 0, reward: 0, endsAt: 0, done: null, nextAt: null };
-    STATE.campaign = { levelId: null, objectives: [], endsAt: 0, done: null, reason: null };
+    STATE.campaign = { levelId: null, objectives: [], bonuses: [], endsAt: 0, done: null, reason: null };
     STATE.losses = { tickKw: {}, totalKwh: {}, blame: [] };
     STATE.gameOver = null;
 }
