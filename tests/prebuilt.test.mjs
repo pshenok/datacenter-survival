@@ -16,6 +16,7 @@ import { tickCampaign, startLevelState, levelCfg } from "../src/campaign/campaig
 import { applyPreBuilt, preBuiltSpec, hasPreBuilt } from "../src/campaign/prebuilt.js";
 import { placeBuilding, demolishBuilding, connect, resetWireIds } from "../src/sim/build.js";
 import { utilityOf, feedIsDark } from "../src/sim/power.js";
+import { resetBreaker } from "../src/sim/crisis.js";
 
 const DT = 0.05;
 const rngZero = () => 0;
@@ -124,29 +125,67 @@ describe("L7 over_cooled — the fix is a demolition", () => {
     });
 });
 
-describe("L8 one_bus — the shared rating", () => {
-    it("LOSE: four racks on one 16 kW PDU all brown out together", () => {
+describe("L8 one_bus — the shared rating, and the handle that does not fix it", () => {
+    it("LOSE: the bus is asked for more than its rating and OPENS", () => {
         start("one_bus");
         runLevel("one_bus");
         expect(STATE.campaign.done).toBe("failed");
-        // Not a heat problem, not a sizing problem — the bus.
-        expect(STATE.losses.tickKw.link_clip).toBeGreaterThan(0);
+        const pdu = of("pdu")[0];
+        expect(pdu.tripped).toBe(true);
+        // Not a heat problem, not a sizing problem — the bus, by name.
+        expect(STATE.losses.tickKw.breaker_tripped).toBeGreaterThan(0);
         const culprit = STATE.buildings.find((b) => b.id === STATE.losses.blame[0].buildingId);
         expect(culprit.type).toBe("pdu");
     });
 
-    it("WIN: $60 buys the second bus the room needed", () => {
+    it("LOSE: resetting it forever without fixing the cause is a slower outage", () => {
+        // The impossible-for-a-human version — reset on EVERY tick — still
+        // misses, because the bus opens again within seconds each time.
+        start("one_bus");
+        const limit = levelCfg("one_bus").timeLimitSec + 5;
+        for (let i = 0; i < limit / DT; i++) {
+            if (STATE.campaign.done !== null) break;
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            tickEvents(DT, t);
+            tickCrisis(DT, t, rngZero);
+            tickDemand(DT, t);
+            resolvePower(DT);
+            tickHeat(DT);
+            tickCampaign(DT, t);
+            for (const b of STATE.buildings) if (b.tripped) resetBreaker(b);
+        }
+        expect(STATE.campaign.done).toBe("failed");
+        // It served real work — just never enough of it.
+        expect(STATE.campaign.objectives[0].progress).toBeGreaterThan(20);
+    });
+
+    it("WIN: $60 buys the second bus, and THEN the handle stays in", () => {
         const made = start("one_bus");
         const xf = made[1];
         const pdu2 = placeBuilding("pdu", 9, 9);
         expect(typeof pdu2).not.toBe("string");
         connect(xf, pdu2);
-        // Move half the racks onto it — re-wiring replaces the old feed.
-        const racks = of("rack");
-        connect(pdu2, racks[2]);
-        connect(pdu2, racks[3]);
-        runLevel("one_bus");
+        // Move half the load across — re-wiring replaces the old feed.
+        connect(pdu2, of("rack")[2]);
+        connect(pdu2, of("rack")[3]);
+        connect(pdu2, of("crac")[1]);
+        const limit = levelCfg("one_bus").timeLimitSec + 5;
+        for (let i = 0; i < limit / DT; i++) {
+            if (STATE.campaign.done !== null) break;
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            tickEvents(DT, t);
+            tickCrisis(DT, t, rngZero);
+            tickDemand(DT, t);
+            resolvePower(DT);
+            tickHeat(DT);
+            tickCampaign(DT, t);
+            for (const b of STATE.buildings) if (b.tripped) resetBreaker(b);
+        }
         expect(STATE.campaign.done).toBe("won");
+        // …and with the load split, nothing was tripped at the end.
+        expect(STATE.buildings.every((b) => !b.tripped)).toBe(true);
     });
 });
 

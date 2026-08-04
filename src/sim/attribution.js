@@ -59,6 +59,9 @@ function powerCause(rack, byId) {
     let hops = 0;
     let clipped = null;
     while (node && hops++ <= maxHops) {
+        if (node.tripped) {
+            return { cause: "breaker_tripped", id: node.id };
+        }
         if (node.type === "generator" && node.fuelLiters <= 0) {
             return { cause: "tank_dry", id: node.id };
         }

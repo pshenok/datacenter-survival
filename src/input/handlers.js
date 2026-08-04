@@ -5,7 +5,7 @@
 import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
 import { placeBuilding as simPlace, connect as simConnect, demolishBuilding as simDemolish } from "../sim/build.js";
-import { repairCrac, orderFuel } from "../sim/crisis.js";
+import { repairCrac, orderFuel, resetBreaker } from "../sim/crisis.js";
 import { camera, cameraTarget, renderer, worldToGrid, gridToWorld, buildingGroup } from "../ui/scene.js";
 import { attachMesh, addWireMesh, removeWireMesh, removeMesh } from "../ui/meshes.js";
 import { markActiveTool, refreshAffordability } from "../ui/toolbar.js";
@@ -102,6 +102,11 @@ function handlePrimary(e) {
         } else {
             showBanner(i18n.t("repair_no_funds", { cost: CONFIG.events.cracBreakdown.repairCost }), 2500);
         }
+    }
+    // Clicking a tripped link pushes its handle back in.
+    if (hit.building && hit.building.tripped) {
+        resetBreaker(hit.building);
+        showBanner(i18n.t("breaker_reset"), 3000);
     }
     // Clicking a generator below a full tank orders the refill truck.
     if (hit.building && hit.building.type === "generator") {

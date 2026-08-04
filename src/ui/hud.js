@@ -119,6 +119,9 @@ export function renderInspect(b) {
     }
     const rows = [];
     rows.push(`<div class="text-sm font-bold text-white mb-2">${i18n.t("b_" + b.type)}</div>`);
+    if (b.tripped) {
+        rows.push(`<div class="text-red-400 font-bold mb-1">${i18n.t("insp_tripped")}</div>`);
+    }
     if (b.config.chainRole === "load" && !b.powered) {
         rows.push(`<div class="text-red-400 font-bold mb-1">${i18n.t("insp_unpowered")}</div>`);
     }

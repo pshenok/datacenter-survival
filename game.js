@@ -29,6 +29,7 @@ let warnedWaveAt = 0;
 let heatwaveWasActive = false;
 let brownoutWasActive = false;
 let brokenIds = new Set();
+let trippedIds = new Set();
 let seenContractId = 0;
 let seenContractDone = null;
 let gameOverShown = false;
@@ -80,6 +81,18 @@ function tick(dt) {
         if (!b.broken && brokenIds.has(b.id)) showBanner(i18n.t("crac_repaired"), 3000);
     }
     brokenIds = nowBroken;
+
+    // Breaker trips: real gear opens instead of dimming forever, so say so
+    // loudly — the badge names the link, this says what to do about it.
+    const nowTripped = new Set();
+    for (const b of STATE.buildings) {
+        if (!b.tripped) continue;
+        nowTripped.add(b.id);
+        if (!trippedIds.has(b.id)) {
+            showBanner(i18n.t("breaker_trip", { name: i18n.t("b_" + b.type) }), 6000);
+        }
+    }
+    trippedIds = nowTripped;
 
     // Contracts: new offer, then completion/expiry.
     const c = STATE.contract;
@@ -147,6 +160,7 @@ function clearWorld() {
     heatwaveWasActive = false;
     brownoutWasActive = false;
     brokenIds = new Set();
+    trippedIds = new Set();
     seenContractId = 0;
     seenContractDone = null;
     gameOverShown = false;

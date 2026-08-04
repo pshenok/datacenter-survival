@@ -205,6 +205,11 @@ export function resolvePower(dt) {
             if (b.type === "grid_feed" && STATE.brownout.active) {
                 cap *= sanitize(STATE.brownout.factor, 0, 1);
             }
+            // What the subtree asked for, before the cap — this is the
+            // overload signal the breaker integrates (the carried number
+            // never exceeds 100% by construction and would never trip).
+            b.demandedKw = sum;
+            if (b.tripped) cap = 0;
             p = Math.min(cap, sum);
             // Diagnostic only (sim/attribution.js reads it to name WHICH link
             // starved a rack). Nothing in the resolution reads it back.
@@ -397,6 +402,30 @@ export function resolvePower(dt) {
                 }
                 node = node.parentId && node.parentId !== "grid" ? byId.get(node.parentId) : null;
             }
+        }
+    }
+
+    // 5b) BREAKERS. Inverse-time: overload heat accrues at (ratio - 1) per
+    // second and opens the link at tripSeconds, so a mild overload takes
+    // ~20 s and a severe one 2 s. Below pickup nothing accrues and the heat
+    // bleeds away, so a facility that never overloads can never trip. A
+    // tripped link carries nothing until the player resets it — real gear
+    // opens, it does not dim forever.
+    const brk = CONFIG.breaker;
+    for (const b of STATE.buildings) {
+        const role = b.config.chainRole;
+        if (role !== "link" && role !== "fanout") continue;
+        const cap = Number.isFinite(b.config.capacityKw) ? b.config.capacityKw : 0;
+        if (b.tripped || cap <= 0) continue;
+        const ratio = b.demandedKw / cap;
+        if (ratio > brk.pickupRatio) {
+            b.breakerHeat += dt * (ratio - 1);
+            if (b.breakerHeat >= brk.tripSeconds) {
+                b.tripped = true;
+                b.breakerHeat = 0;
+            }
+        } else {
+            b.breakerHeat = Math.max(0, b.breakerHeat - dt * brk.coolPerSec);
         }
     }
 

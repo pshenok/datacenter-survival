@@ -25,7 +25,10 @@ export const CONFIG = {
         ups: {
             name: "UPS",
             cost: 120,
-            capacityKw: 24,
+            // Rated for a full room's IT plus its cooling: with breakers a
+            // link that carries the whole load must be sized for it, and the
+            // PDU (16 kW) stays the bus the game teaches sharing on.
+            capacityKw: 36,
             chainRole: "link",
             // Seconds of full-subtree draw it can carry when its source goes
             // dark (a blip, not a blackout — generators are post-MVP).
@@ -82,6 +85,25 @@ export const CONFIG = {
             coolPerSec: 10,      // heat units removed/sec at full duty, split over radius
             radius: 3,           // cells (Chebyshev)
         },
+    },
+
+    // ---- Breakers -----------------------------------------------------
+    // Real gear does not dim forever: a link asked for more than its rating
+    // opens, and someone walks to the board and pushes the handle back.
+    // Inverse-time, one formula instead of a table: heat accrues at
+    // (ratio - 1) per second and trips at tripSeconds, so 110% takes ~20 s
+    // and 200% takes 2 s. Below pickupRatio nothing accrues and the heat
+    // bleeds off at coolPerSec — a facility that never overloads can never
+    // trip, which is the property the campaign depends on.
+    //
+    // Deliberately NOT ported from Server Survival: its half-open/probe
+    // state. SS has request-level outcomes to probe with; DC has kW against
+    // a rating, and auto-reclosers live on utility lines, not on a PDU.
+    breaker: {
+        pickupRatio: 1.1,
+        tripSeconds: 2.0,
+        coolPerSec: 0.5,
+        resetCost: 0,       // pushing a handle is free; the downtime is not
     },
 
     // ---- Heat field ---------------------------------------------------

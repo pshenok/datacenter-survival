@@ -33,7 +33,8 @@ function tabContent() {
         case "power": return `
             <p>${i18n.t("faq_power_1")}</p>
             <p>${i18n.t("faq_power_2")}</p>
-            <p>${i18n.t("faq_power_3")}</p>`;
+            <p>${i18n.t("faq_power_3")}</p>
+            <p>${i18n.t("faq_power_4")}</p>`;
         case "heat": return `
             <p>${i18n.t("faq_heat_1")}</p>
             <p>${i18n.t("faq_heat_2")}</p>

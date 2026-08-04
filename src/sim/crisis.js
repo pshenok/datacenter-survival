@@ -160,6 +160,16 @@ export function repairCrac(b) {
     return true;
 }
 
+// Push the handle back in (wired to the select tool's click on a tripped
+// link). Free — the downtime already cost you. Resetting a breaker whose
+// cause you have not fixed simply trips it again, which is the lesson.
+export function resetBreaker(b) {
+    if (!b || !b.tripped) return false;
+    b.tripped = false;
+    b.breakerHeat = 0;
+    return true;
+}
+
 // Order a refill (wired to the select tool's click on a generator). Refuses
 // on a full tank, an order already in transit, or an empty wallet — same
 // affordability rule as repairCrac. The tank fills when the truck arrives

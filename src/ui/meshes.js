@@ -115,7 +115,9 @@ export function tickMeshes(dt) {
     for (const b of STATE.buildings) {
         if (!b.mesh) continue;
         const base = CONFIG.colors[b.type];
-        if (b.broken) {
+        if (b.tripped) {
+            b.mesh.material.color.setHex(0x7f1d1d);   // open breaker: dark red
+        } else if (b.broken) {
             b.mesh.material.color.setHex(0x7f1d1d); // broken CRAC: dark red
         } else if (b.type === "generator") {
             // Dry tank = dark; carrying = amber glow; idle standby = base.

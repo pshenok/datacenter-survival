@@ -106,6 +106,10 @@ export function chainAlive(building, byId) {
             if (node.type === "generator") return node.fuelLiters > 0;
             return !feedIsDark(node);
         }
+        // A tripped breaker is a dead root — checked BEFORE the UPS clause,
+        // or a tripped UPS would still read as live and reintroduce the
+        // starvation bug pinned in tests/integration.test.mjs.
+        if (node.tripped) return false;
         // A UPS with charge is a live root for assignment purposes: work must
         // keep flowing to its subtree during an upstream blip, or the buffer
         // in sim/power.js has nothing to carry and the blip becomes a blackout.

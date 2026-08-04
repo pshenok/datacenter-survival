@@ -44,6 +44,16 @@ export class Building {
         // sim/attribution.js to name the link that starved a rack.
         this.clippedKw = 0;
 
+        // What the subtree ASKED this link for, before its cap clipped it.
+        // The overload signal has to be the demanded load, not the carried
+        // one — a link pinned at its rating carries exactly 100% forever.
+        this.demandedKw = 0;
+
+        // Breaker (owned by sim/power.js): thermal accumulator and state.
+        // A tripped link is a dead root until the player clicks it.
+        this.breakerHeat = 0;
+        this.tripped = false;
+
         // Generator (owned by sim/power.js + sim/crisis.js): born with a
         // full tank; standby children list is the transfer switch — those
         // buildings keep their primary feed and fall to this generator only

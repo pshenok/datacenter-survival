@@ -182,9 +182,22 @@ describe("naming the right culprit", () => {
     });
 
     it("blames the CLIPPED LINK when the racks are cool but the PDU is over-subscribed", () => {
-        // 4 racks (24 kW) on one 16 kW PDU, cooled: the loss is the cap.
-        room({ demand: 24, racks: [[14, 4], [16, 4], [14, 8], [16, 8]], cracs: [[15, 6], [15, 10]] });
+        // A MILD overload — three racks (17 kW of demand) on one 16 kW PDU,
+        // cooling on its own bus. Above the rating (so it clips) but under
+        // the breaker's pickup (so it never opens): the sustained-clip
+        // regime, which is what "over-subscribed" means when nothing trips.
+        STATE.demandFixedKw = 17;
+        const feed = place("grid_feed", 2, 5);
+        const xf = place("transformer", 5, 5);
+        const busy = place("pdu", 8, 5);
+        const cool = place("pdu", 8, 9);
+        wireBuildings(feed, xf);
+        wireBuildings(xf, busy);
+        wireBuildings(xf, cool);
+        for (const [gx, gz] of [[14, 4], [16, 4], [14, 8]]) wireBuildings(busy, place("rack", gx, gz));
+        for (const [gx, gz] of [[15, 6], [15, 10]]) wireBuildings(cool, place("crac", gx, gz));
         for (let i = 0; i < 60 / DT; i++) step();
+        expect(STATE.buildings.every((b) => !b.tripped)).toBe(true);
         expect(STATE.losses.tickKw.link_clip).toBeGreaterThan(0);
         expect(STATE.losses.tickKw.link_clip).toBeGreaterThan(STATE.losses.tickKw.thermal);
         const culprit = STATE.buildings.find((b) => b.id === STATE.losses.blame[0].buildingId);
