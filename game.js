@@ -9,8 +9,8 @@ import { tickHeat } from "./src/sim/heat.js";
 import { tickDemand, tickEvents, upcomingWave } from "./src/sim/demand.js";
 import { tickCrisis } from "./src/sim/crisis.js";
 import { tickContracts } from "./src/sim/contracts.js";
-import { scene, camera, renderer, resetCamera, buildingGroup, wireGroup } from "./src/ui/scene.js";
-import { tickMeshes, removeMesh, removeWireMesh } from "./src/ui/meshes.js";
+import { scene, camera, renderer, resetCamera, focusWorld, gridToWorld, buildingGroup, wireGroup } from "./src/ui/scene.js";
+import { tickMeshes, removeMesh, removeWireMesh, attachMesh, addWireMesh } from "./src/ui/meshes.js";
 import { tickHud, showBanner, showGameOver, resetHudStats, renderInspect, contractLabel, renderLossLedger } from "./src/ui/hud.js";
 import { tickOverlay, toggleThermalOverlay } from "./src/ui/overlay.js";
 import { tickPulses } from "./src/ui/pulses.js";
@@ -20,6 +20,7 @@ import { setTool, tickInspect } from "./src/input/handlers.js";
 import { tutorial, showCeremony, shouldOfferTutorial, tickTutorial, notifyOverlayToggled } from "./src/ui/tutorial.js";
 import { openFaq, closeFaq } from "./src/ui/faq.js";
 import { tickCampaign, startLevelState } from "./src/campaign/campaign.js";
+import { applyPreBuilt } from "./src/campaign/prebuilt.js";
 import { initCampaignUi, openCampaign, closeCampaign, openBriefing, closeBriefing, onLevelStart, tickCampaignUi } from "./src/ui/campaign-ui.js";
 import { i18n } from "./src/i18n.js";
 
@@ -193,6 +194,28 @@ window.launchCampaignLevel = (id) => {
     document.getElementById("level-result-modal").classList.add("hidden");
     beginRun();
     startLevelState(id);
+    // A diagnosis level hands the player a room that is already running:
+    // the pure builder makes the topology, this pass gives it bodies.
+    const prebuilt = applyPreBuilt(id);
+    for (const b of prebuilt) attachMesh(b);
+    for (const w of STATE.wires) {
+        const from = STATE.buildings.find((x) => x.id === w.from);
+        const to = STATE.buildings.find((x) => x.id === w.to);
+        if (from && to && !w.mesh) addWireMesh(w, from, to);
+    }
+    // Resolve once so the room reads as ALIVE while the level sits paused:
+    // without this every prebuilt load renders as an unpowered grey box
+    // until the player presses Play, which is the opposite of the point.
+    if (prebuilt.length > 0) resolvePower(1 / 60);
+    // …and put the camera on it, or the player opens the level looking at
+    // an empty corner of the floor.
+    resetCamera();
+    if (prebuilt.length > 0) {
+        const cx = prebuilt.reduce((s, b) => s + b.gx, 0) / prebuilt.length;
+        const cz = prebuilt.reduce((s, b) => s + b.gz, 0) / prebuilt.length;
+        const w = gridToWorld(Math.round(cx), Math.round(cz));
+        focusWorld(w.x, w.z);
+    }
     refreshAffordability();     // re-run under the level's money AND its bans
     onLevelStart(id);
 };

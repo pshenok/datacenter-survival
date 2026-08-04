@@ -13,11 +13,25 @@ export const cameraTarget = new THREE.Vector3(0, 0, 0);
 
 export function resetCamera() {
     camera.position.set(60, 60, 60);
+    cameraTarget.set(0, 0, 0);
     camera.lookAt(cameraTarget);
     camera.zoom = 1;
     camera.updateProjectionMatrix();
 }
 resetCamera();
+
+// Slide the camera so a given world point sits in the middle of the shot,
+// keeping the isometric angle. A prebuilt level hands the player a room
+// somewhere on the floor and must not make them go looking for it.
+export function focusWorld(x, z) {
+    const dx = x - cameraTarget.x;
+    const dz = z - cameraTarget.z;
+    camera.position.x += dx;
+    camera.position.z += dz;
+    cameraTarget.x += dx;
+    cameraTarget.z += dz;
+    camera.lookAt(cameraTarget);
+}
 
 export const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);

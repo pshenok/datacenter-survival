@@ -207,6 +207,7 @@ export const CONFIG = {
         chapters: [
             { id: "ch1", titleKey: "ch1_title", levels: ["first_watt", "hot_aisle", "the_bill", "sag", "dark_chain"] },
             { id: "ch2", titleKey: "ch2_title", levels: ["fuel_clock"] },
+            { id: "ch3", titleKey: "ch3_title", levels: ["over_cooled", "one_bus", "cold_room"] },
         ],
         levels: {
             // Teach: the delivery chain. Wire feed→transformer→ups→pdu→rack
@@ -290,6 +291,93 @@ export const CONFIG = {
                 // alone covers 8s of each 35s window, so the generator has to
                 // carry the rest.
                 objectives: [{ type: "serve_kwh_during_event", event: "outage", target: 8 }],
+            },
+
+            // ---- Chapter 3: DIAGNOSIS -----------------------------------
+            // These hand the player a room that is already running and
+            // already wrong. Nothing here can be solved by building more;
+            // every answer is "find the mistake, then remove or move it".
+            // A blank floor cannot express any of them.
+
+            // Teach: more cooling is not better cooling. Four CRACs hold this
+            // room beautifully and bury the PUE — the fix is DEMOLISHING two,
+            // which even pays (50% refund). Only expressible because a CRAC
+            // now pays idle draw whether or not it is moving heat.
+            over_cooled: {
+                startMoney: 0,
+                timeLimitSec: 180,
+                demandKw: 12,
+                script: [{ atSec: 0, kind: "heatwave", durationSec: 100000 }],
+                preBuilt: {
+                    buildings: [
+                        { type: "grid_feed", gx: 3, gz: 5 },
+                        { type: "transformer", gx: 6, gz: 5 },
+                        { type: "pdu", gx: 9, gz: 5 },
+                        { type: "pdu", gx: 9, gz: 9 },
+                        { type: "rack", gx: 13, gz: 6 },
+                        { type: "rack", gx: 13, gz: 8 },
+                        { type: "crac", gx: 12, gz: 7 },
+                        { type: "crac", gx: 14, gz: 7 },
+                        { type: "crac", gx: 13, gz: 5 },
+                        { type: "crac", gx: 13, gz: 9 },
+                    ],
+                    wires: [[0, 1], [1, 2], [1, 3], [2, 4], [2, 5], [3, 6], [3, 7], [3, 8], [3, 9]],
+                },
+                objectives: [
+                    { type: "no_throttle", holdSec: 40, afterSec: 50 },
+                    { type: "pue_below", value: 1.45, holdSec: 40, afterSec: 50 },
+                ],
+            },
+
+            // Teach: a PDU's kW rating is shared by everything on it. Four
+            // racks on one 16 kW bus all brown out together and look equally
+            // sick; the badge names the bus, and $60 buys exactly the second
+            // PDU the room needs.
+            one_bus: {
+                startMoney: 60,
+                timeLimitSec: 180,
+                demandKw: 20,
+                script: [],
+                preBuilt: {
+                    buildings: [
+                        { type: "grid_feed", gx: 3, gz: 5 },
+                        { type: "transformer", gx: 6, gz: 5 },
+                        { type: "pdu", gx: 9, gz: 5 },
+                        { type: "rack", gx: 13, gz: 4 },
+                        { type: "rack", gx: 13, gz: 6 },
+                        { type: "rack", gx: 13, gz: 8 },
+                        { type: "rack", gx: 13, gz: 10 },
+                        { type: "crac", gx: 15, gz: 5 },
+                        { type: "crac", gx: 15, gz: 9 },
+                    ],
+                    wires: [[0, 1], [1, 2], [2, 3], [2, 4], [2, 5], [2, 6], [2, 7], [2, 8]],
+                },
+                objectives: [{ type: "serve_kwh", target: 48 }],
+            },
+
+            // Teach: cooling works in a RADIUS. These two CRACs run flat out
+            // in an empty corner while the aisle cooks — the classic "we have
+            // cooling, why is it hot" ticket. Demolish and re-place in radius.
+            cold_room: {
+                startMoney: 120,
+                timeLimitSec: 200,
+                demandKw: 14,
+                script: [{ atSec: 0, kind: "heatwave", durationSec: 100000 }],
+                preBuilt: {
+                    buildings: [
+                        { type: "grid_feed", gx: 3, gz: 5 },
+                        { type: "transformer", gx: 6, gz: 5 },
+                        { type: "pdu", gx: 9, gz: 5 },
+                        { type: "pdu", gx: 9, gz: 9 },
+                        { type: "rack", gx: 14, gz: 6 },
+                        { type: "rack", gx: 14, gz: 8 },
+                        { type: "rack", gx: 15, gz: 7 },
+                        { type: "crac", gx: 24, gz: 6 },
+                        { type: "crac", gx: 24, gz: 10 },
+                    ],
+                    wires: [[0, 1], [1, 2], [1, 3], [2, 4], [2, 5], [2, 6], [3, 7], [3, 8]],
+                },
+                objectives: [{ type: "no_throttle", holdSec: 40, afterSec: 60 }],
             },
         },
     },
