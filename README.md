@@ -9,12 +9,14 @@ teaches the *physical* layer it all runs on — megawatts, heat, cooling, PUE.
 
 [![PLAY NOW](https://img.shields.io/badge/PLAY_NOW-Datacenter_Survival-d97706?style=for-the-badge)](https://pshenok.github.io/datacenter-survival/)
 
-![Datacenter Survival gameplay: wiring the power chain, the hot aisle blooming under the thermal overlay, cooling answering it, and a city grid outage carried by UPS and generator](assets/demo.gif)
+![Datacenter Survival gameplay: wiring the power chain, the hot aisle blooming under the thermal overlay, cooling answering it, a city grid outage carried by UPS and generator, and the loss ledger naming where the money went](assets/demo.gif)
 
 *Real capture, sped up with the game's own fast-forward: the chain goes live →
-the rack block cooks itself past 45 °C and throttles → CRACs bring it back
-(and push PUE up) → the city grid dies, and only the UPS-backed half of the
-room stays lit until the standby generator picks up.*
+the rack block cooks itself past 45 °C and throttles → CRACs answer it (and
+push PUE up) → the city grid dies, and only the UPS-backed half of the room
+stays lit until the standby generator picks up. Throughout, badges name the
+building responsible for every kilowatt you fail to serve — and the ledger
+totals it in dollars.*
 
 ## The two systems
 

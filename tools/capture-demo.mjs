@@ -14,7 +14,7 @@ import { mkdirSync, rmSync } from "node:fs";
 
 const PORT = process.argv[2] || "8299";
 const OUT = process.argv[3] || "/tmp/dc-frames";
-const W = 880, H = 550;
+const W = 1440, H = 810;    // 16:9, downscaled at encode time — crisp text
 const FPS = 12;
 
 rmSync(OUT, { recursive: true, force: true });
@@ -112,7 +112,7 @@ const grabber = (async () => {
 // Beat 1: an empty machine hall — then the power chain appears link by link.
 await run(() => {
     window.startGame();
-    window.__demo.frame(1.25, 16, 16);   // centre on the hall we are about to build
+    window.__demo.frame(1.7, 16, 15);    // centre on the hall we are about to build
     window.__demo.S.money = 2800;        // a demo build, not a balance claim
 });
 await sleep(700);
@@ -190,6 +190,16 @@ await run(() => {
 });
 await sleep(4600);
 console.log("during outage:", await stat());
+
+// Beat 8: the diagnosis layer. Badges have been naming the culprit over
+// each building all along; the ledger says where the money went.
+await run(() => {
+    const S = window.__demo.S;
+    S.gridOutage.active = false;
+    window.openPauseMenu();
+});
+await sleep(3600);
+console.log("ledger:", await run(() => document.getElementById("pause-ledger").innerText.replace(/\n+/g, " | ")));
 
 grabbing = false;
 await grabber;

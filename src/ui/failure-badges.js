@@ -101,7 +101,10 @@ export function tickBadges(dt) {
             badges.splice(i, 1);
             continue;
         }
-        b.sprite.position.set(host.mesh.position.x, 5.2, host.mesh.position.z);
+        // Adjacent buildings put their labels on top of each other, so stagger
+        // the height deterministically by index — the same badge keeps the
+        // same lane instead of jittering between frames.
+        b.sprite.position.set(host.mesh.position.x, 5.2 + (i % 3) * 1.5, host.mesh.position.z);
         b.sprite.material.opacity = Math.min(1, b.life / 0.6);
     }
 }
