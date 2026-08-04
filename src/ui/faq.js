@@ -4,7 +4,7 @@
 import { CONFIG } from "../core/config.js";
 import { i18n } from "../i18n.js";
 
-const TABS = ["basics", "buildings", "power", "heat", "events", "controls"];
+const TABS = ["basics", "buildings", "power", "heat", "events", "losses", "controls"];
 let activeTab = "basics";
 
 function buildingRows() {
@@ -46,6 +46,10 @@ function tabContent() {
             <p>${i18n.t("faq_events_5")}</p>
             <p>${i18n.t("faq_events_6")}</p>
             <p>${i18n.t("faq_events_7")}</p>`;
+        case "losses": return `
+            <p>${i18n.t("faq_loss_1")}</p>
+            <p>${i18n.t("faq_loss_2")}</p>
+            <p class="text-cyan-300">${i18n.t("faq_loss_3")}</p>`;
         case "controls": return `
             <p>${i18n.t("faq_controls_1")}</p>
             <p>${i18n.t("faq_controls_2")}</p>`;

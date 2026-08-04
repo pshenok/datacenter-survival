@@ -4,6 +4,8 @@
 import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
 import { i18n } from "../i18n.js";
+import { lossLedger } from "../sim/attribution.js";
+import { LOSS_CAUSES } from "../core/loss-causes.js";
 
 const el = (id) => document.getElementById(id);
 let bestPue = Infinity;
@@ -70,6 +72,34 @@ export function contractLabel(c) {
         target: c.target,
         pue: cfg && cfg.pueBelow,
     });
+}
+
+// ---- loss ledger --------------------------------------------------------
+// Where the run's unserved kWh actually went, priced at the same SLA rate
+// the simulation charged for them. The score stops being a verdict and
+// becomes a list of named, fixable causes.
+export function renderLossLedger(hostId) {
+    const host = document.getElementById(hostId);
+    if (!host) return;
+    const { rows, totalKwh, totalDollars } = lossLedger();
+    if (rows.length === 0 || totalKwh < 0.05) {
+        host.classList.add("hidden");
+        return;
+    }
+    const body = rows.map((r) => {
+        const meta = LOSS_CAUSES[r.cause];
+        const pct = Math.round((r.kwh / totalKwh) * 100);
+        return `<div class="flex items-center gap-2 text-[11px] py-0.5">
+            <span class="w-2 h-2 rounded-full shrink-0" style="background:${meta.color}"></span>
+            <span class="flex-1 text-gray-300">${i18n.t(meta.key)}</span>
+            <span class="text-gray-500 tabular-nums">${pct}%</span>
+            <span class="text-red-300 tabular-nums w-14 text-right">-$${Math.round(r.dollars)}</span>
+        </div>`;
+    }).join("");
+    host.innerHTML =
+        `<div class="text-[10px] text-gray-500 uppercase tracking-wide mb-1">${i18n.t("ledger_title", { total: Math.round(totalDollars) })}</div>`
+        + body;
+    host.classList.remove("hidden");
 }
 
 let bannerTimer = null;
@@ -191,5 +221,6 @@ export function showGameOver(reason) {
         pue: best.bestPue !== null ? best.bestPue.toFixed(2) : "—",
     });
     statsEl.appendChild(bestLine);
+    renderLossLedger("gameover-ledger");
     document.getElementById("gameover-modal").classList.remove("hidden");
 }

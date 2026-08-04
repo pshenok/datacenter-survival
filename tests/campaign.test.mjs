@@ -475,33 +475,51 @@ describe("L5 dark_chain", () => {
         expect(STATE.campaign.done).toBe("won");
     });
 
-    it("LOSE: the same chain without a UPS goes dark three times and misses the target on the clock", () => {
+    it("LOSE: without a UPS the level scores EXACTLY ZERO — the assertion no total can make", () => {
+        // Under a total-kWh objective this build banked plenty of energy in
+        // the calm minutes and merely fell short. Window-scoped, it provably
+        // does none of the work the level is about: every blackout second is
+        // served by nobody.
         start("dark_chain");
         const { pdu } = chain(6, { ups: false });
         darkLoads(pdu);
         runLevel(levelCfg("dark_chain").timeLimitSec + 5);
         expect(STATE.campaign.done).toBe("failed");
+        // Not literally zero: sim/demand.js's documented one-tick actualKw lag
+        // credits the first tick of each blackout before the dark arrives, so
+        // the floor is (outages x dt x demand / 60). Anything above that would
+        // mean the build really did serve through the dark.
+        const cfgLvl = levelCfg("dark_chain");
+        const outages = cfgLvl.script.filter((e) => e.kind === "outage").length;
+        const lagBound = outages * DT * cfgLvl.demandKw / 60;
+        expect(STATE.campaign.objectives[0].progress).toBeLessThanOrEqual(lagBound + 1e-9);
+        expect(STATE.campaign.objectives[0].progress).toBeLessThan(cfgLvl.objectives[0].target * 0.02);
         // A genuine timeout — the facility survives, the target doesn't.
         expect(STATE.gameOver).toBeNull();
         expect(STATE.elapsedGameTime).toBeGreaterThanOrEqual(levelCfg("dark_chain").timeLimitSec);
     });
 
-    it("bans the generator — and the ban is load-bearing: the forbidden build would win", () => {
-        // (a) the config seam the UI gate reads:
+    it("is double-protected: the generator is banned AND could not bridge a 6s blip anyway", () => {
+        // (a) the config seam the UI gate reads. The gate itself lives in the
+        // UI layer (handlers.placeBuilding), so this field is the testable
+        // half — it keeps a player from spending $220 on the wrong answer.
         expect(levelCfg("dark_chain").banned).toContain("generator");
-        // (b) machine-play the build the ban forbids (UPS-less chain + standby
-        // generator, cost 860 ≤ 1200): it WINS, proving the level's UPS lesson
-        // needs the gate. The gate itself lives in the UI layer
-        // (handlers.placeBuilding), so the config field is the tested seam.
+
+        // (b) and since the objective became window-scoped, the physics now
+        // enforce the same lesson on their own: a transfer switch needs
+        // cutoverSec to pick up, which is HALF of each 6-second blackout, so
+        // the forbidden build cannot clear the target either. Batteries
+        // bridge blips; generators carry outages. That is the whole level.
+        // The cutover eats at least half of each blip before a single kW flows.
+        expect(CONFIG.buildings.generator.cutoverSec)
+            .toBeGreaterThanOrEqual(levelCfg("dark_chain").script[0].durationSec / 2);
         start("dark_chain");
         const { xf, pdu } = chain(6, { ups: false });
-        const racks = [place("rack", 14, 5), place("rack", 14, 7)];
-        racks.forEach((r) => wireBuildings(pdu, r));
+        [[14, 5], [14, 7]].forEach(([gx, gz]) => wireBuildings(pdu, place("rack", gx, gz)));
         wireBuildings(pdu, place("crac", 15, 6));
-        const g = place("generator", 2, 9);
-        wireBuildings(g, xf);
+        wireBuildings(place("generator", 2, 9), xf);
         runLevel(levelCfg("dark_chain").timeLimitSec + 5);
-        expect(STATE.campaign.done).toBe("won");
+        expect(STATE.campaign.done).toBe("failed");
     });
 
     it("LOSE: a spare feed placed MID-OUTAGE is just as dead — the exploit does not beat the level", () => {

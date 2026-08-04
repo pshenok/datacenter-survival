@@ -5,7 +5,7 @@
 import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
 import { completedLevels, isLevelUnlocked, levelOrder } from "../campaign/campaign.js";
-import { showBanner } from "./hud.js";
+import { showBanner, renderLossLedger } from "./hud.js";
 import { i18n } from "../i18n.js";
 
 let freeze = () => {};
@@ -95,6 +95,7 @@ export function openBriefing(id) {
     document.getElementById("briefing-learn").textContent = i18n.t("lv_" + id + "_learn");
     const goals = cfg.objectives.map((o) => {
         if (o.type === "serve_kwh") return i18n.t("obj_serve_kwh", { target: o.target });
+        if (o.type === "serve_kwh_during_event") return i18n.t("obj_serve_during", { target: o.target });
         if (o.type === "pue_below") return i18n.t("obj_pue_below", { value: o.value, hold: o.holdSec });
         return i18n.t("obj_no_throttle", { hold: o.holdSec });
     });
@@ -122,6 +123,9 @@ function objectiveRow(o) {
     let progress;
     if (o.type === "serve_kwh") {
         label = i18n.t("obj_serve_kwh", { target: o.target });
+        progress = `${Math.min(o.progress, o.target).toFixed(1)} / ${o.target}`;
+    } else if (o.type === "serve_kwh_during_event") {
+        label = i18n.t("obj_serve_during", { target: o.target });
         progress = `${Math.min(o.progress, o.target).toFixed(1)} / ${o.target}`;
     } else if (o.type === "pue_below") {
         label = i18n.t("obj_pue_below", { value: o.value, hold: o.holdSec });
@@ -193,6 +197,7 @@ export function tickCampaignUi() {
         retry.classList.remove("hidden");
     }
     if (tip) tip.classList.toggle("hidden", !tip.textContent || tip.textContent.startsWith("lv_"));
+    renderLossLedger("level-result-ledger");
     document.getElementById("level-result-modal").classList.remove("hidden");
 }
 

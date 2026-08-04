@@ -31,6 +31,7 @@
 
 import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
+import { attributeLosses } from "./attribution.js";
 
 // Seconds of game time per billing "hour" (see header).
 const BILLING_HOUR_SEC = 60;
@@ -90,7 +91,7 @@ export function upcomingWave(elapsed) {
 // assignment). Capacity clipping / brownout is power.js's job and shows up
 // here via actualKw next tick. Unwired nodes, dangling parent ids, and
 // wiring cycles all count as dead.
-function chainAlive(building, byId) {
+export function chainAlive(building, byId) {
     const maxHops = STATE.buildings.length + 1;
     let node = building;
     let hops = 0;
@@ -193,6 +194,9 @@ export function tickDemand(dt, elapsed) {
         : 100;
     STATE.reputation += (target - STATE.reputation) * CONFIG.sla.driftPerSec * dt;
     STATE.reputation = Math.min(100, Math.max(0, STATE.reputation));
+
+    // Name what the missed kW went to (diagnostic only; see attribution.js).
+    attributeLosses(dt);
 
     // Game over. Bankruptcy is checked first — if both trip in the same
     // tick, the verdict is "bankrupt" (documented ordering).

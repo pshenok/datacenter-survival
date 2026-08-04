@@ -269,7 +269,10 @@ export const CONFIG = {
                     { atSec: 80, kind: "outage", durationSec: 6 },
                     { atSec: 120, kind: "outage", durationSec: 6 },
                 ],
-                objectives: [{ type: "serve_kwh", target: 28 }],
+                // Scored ONLY while the lights are out: kWh banked in the
+                // calm minutes cannot pay for the lesson this level teaches.
+                // 18s of blackout at 12 kW is 3.6 kWh on the table.
+                objectives: [{ type: "serve_kwh_during_event", event: "outage", target: 3 }],
             },
             // Teach: batteries bridge, generators carry, fuel is the real
             // capacity of your backup. Two 35s outages: the UPS covers 8s of
@@ -283,7 +286,10 @@ export const CONFIG = {
                     { atSec: 50, kind: "outage", durationSec: 35 },
                     { atSec: 120, kind: "outage", durationSec: 35 },
                 ],
-                objectives: [{ type: "serve_kwh", target: 26 }],
+                // 70s of blackout at 10 kW is 11.7 kWh available; the UPS
+                // alone covers 8s of each 35s window, so the generator has to
+                // carry the rest.
+                objectives: [{ type: "serve_kwh_during_event", event: "outage", target: 8 }],
             },
         },
     },

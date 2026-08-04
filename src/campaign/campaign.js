@@ -137,6 +137,18 @@ function evaluateObjective(o, dt, elapsed) {
             o.progress += STATE.servedKw * dt / BILLING_HOUR_SEC;
             if (o.progress >= o.target) o.done = true;
             break;
+        // Resilience is proven DURING the failure, not averaged over the calm
+        // minutes around it. A total-kWh objective quietly counts energy
+        // banked before the lights went out — this one only counts what the
+        // facility served while the event was live.
+        case "serve_kwh_during_event": {
+            const live = o.event === "brownout" ? STATE.brownout.active
+                : o.event === "heatwave" ? STATE.heatwave.active
+                    : STATE.gridOutage.active;
+            if (live) o.progress += STATE.servedKw * dt / BILLING_HOUR_SEC;
+            if (o.progress >= o.target) o.done = true;
+            break;
+        }
         case "pue_below": {
             const ok = !gated
                 && STATE.itDrawKw > PUE_MIN_IT_KW

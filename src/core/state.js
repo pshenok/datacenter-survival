@@ -56,6 +56,12 @@ export const STATE = {
     // survival/sandbox — every campaign hook is a no-op.
     campaign: { levelId: null, objectives: [], endsAt: 0, done: null, reason: null },
 
+    // Loss attribution (owned by sim/attribution.js). tickKw decomposes THIS
+    // tick's unserved demand by cause and must sum to it exactly; totalKwh is
+    // the run's ledger; blame carries per-building shares for the floating
+    // badges. Diagnostic only — nothing in the simulation reads it back.
+    losses: { tickKw: {}, totalKwh: {}, blame: [] },
+
     // meta
     gameOver: null,         // null | "bankrupt" | "reputation"
     sound: null,
@@ -82,6 +88,7 @@ export function resetState() {
     STATE.tariff = { active: false, multiplier: 1, endsAt: 0, nextAt: null };
     STATE.contract = { id: 0, key: null, progress: 0, target: 0, reward: 0, endsAt: 0, done: null, nextAt: null };
     STATE.campaign = { levelId: null, objectives: [], endsAt: 0, done: null, reason: null };
+    STATE.losses = { tickKw: {}, totalKwh: {}, blame: [] };
     STATE.gameOver = null;
 }
 

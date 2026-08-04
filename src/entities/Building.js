@@ -39,6 +39,11 @@ export class Building {
         // UPS buffer seconds remaining (owned by sim/power.js).
         this.bufferLeft = type === "ups" ? this.config.bufferSec : 0;
 
+        // How much demand this link had to refuse this tick because it hit
+        // its kW cap. Diagnostic only — written by sim/power.js, read by
+        // sim/attribution.js to name the link that starved a rack.
+        this.clippedKw = 0;
+
         // Generator (owned by sim/power.js + sim/crisis.js): born with a
         // full tank; standby children list is the transfer switch — those
         // buildings keep their primary feed and fall to this generator only

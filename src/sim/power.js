@@ -140,6 +140,7 @@ export function resolvePower(dt) {
     const bufSnap = new Map();
     for (const b of STATE.buildings) {
         if (b.type === "ups") bufSnap.set(b.id, b.bufferLeft);
+        b.clippedKw = 0;
     }
 
     // 1) Sanitized load requests.
@@ -186,6 +187,9 @@ export function resolvePower(dt) {
                 cap *= sanitize(STATE.brownout.factor, 0, 1);
             }
             p = Math.min(cap, sum);
+            // Diagnostic only (sim/attribution.js reads it to name WHICH link
+            // starved a rack). Nothing in the resolution reads it back.
+            b.clippedKw = Math.max(0, sum - p);
         }
         pulls.set(b.id, p);
         return p;

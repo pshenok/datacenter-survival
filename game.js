@@ -11,9 +11,10 @@ import { tickCrisis } from "./src/sim/crisis.js";
 import { tickContracts } from "./src/sim/contracts.js";
 import { scene, camera, renderer, resetCamera, buildingGroup, wireGroup } from "./src/ui/scene.js";
 import { tickMeshes, removeMesh, removeWireMesh } from "./src/ui/meshes.js";
-import { tickHud, showBanner, showGameOver, resetHudStats, renderInspect, contractLabel } from "./src/ui/hud.js";
+import { tickHud, showBanner, showGameOver, resetHudStats, renderInspect, contractLabel, renderLossLedger } from "./src/ui/hud.js";
 import { tickOverlay, toggleThermalOverlay } from "./src/ui/overlay.js";
 import { tickPulses } from "./src/ui/pulses.js";
+import { tickBadges, clearBadges } from "./src/ui/failure-badges.js";
 import { renderPalette, refreshAffordability } from "./src/ui/toolbar.js";
 import { setTool, tickInspect } from "./src/input/handlers.js";
 import { tutorial, showCeremony, shouldOfferTutorial, tickTutorial, notifyOverlayToggled } from "./src/ui/tutorial.js";
@@ -125,6 +126,7 @@ function animate(time) {
     tickCampaignUi();
 
     tickMeshes(rawDt);
+    tickBadges(rawDt);
     if (STATE.isRunning && STATE.timeScale > 0) tickPulses(rawDt);
     tickOverlay(rawDt);
     tickHud();
@@ -138,6 +140,7 @@ function clearWorld() {
     resetState();
     resetBuildingIds();
     resetHudStats();
+    clearBadges();
     renderInspect(null);
     warnedWaveAt = 0;
     heatwaveWasActive = false;
@@ -211,6 +214,7 @@ window.openPauseMenu = () => {
     STATE.timeScale = 0;
     syncPlayPauseUi();
     // Survival has no "retry this level" — the button reads as restart there.
+    renderLossLedger("pause-ledger");
     document.getElementById("pause-menu-modal").classList.remove("hidden");
 };
 window.resumeRun = () => {

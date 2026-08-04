@@ -167,6 +167,7 @@
       <button onclick="resumeRun()" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-lg uppercase text-sm mb-3" data-i18n="btn_resume">Resume</button>
       <button id="pause-retry" onclick="retryFromPause()" class="w-full glass-panel hover:border-amber-500/50 text-amber-300 py-3 rounded-lg text-sm mb-3" data-i18n="btn_retry_level">Retry</button>
       <button onclick="menuFromPause()" class="w-full glass-panel hover:border-gray-500 text-gray-300 py-3 rounded-lg text-sm" data-i18n="btn_to_menu">Menu</button>
+      <div id="pause-ledger" class="hidden mt-5 pt-4 border-t border-gray-700 text-left"></div>
     </div>
   </div>
 
@@ -210,7 +211,8 @@
     <div class="glass-panel rounded-2xl p-10 max-w-md w-full mx-4 text-center border border-emerald-500/40">
       <h2 id="level-result-title" class="text-3xl font-black mb-2"></h2>
       <p id="level-result-sub" class="text-gray-400 text-sm mb-4"></p>
-      <p id="level-result-tip" class="hidden text-left text-gray-200 text-sm bg-blue-900/25 border border-blue-500/40 rounded-lg p-3 mb-6 leading-relaxed"></p>
+      <p id="level-result-tip" class="hidden text-left text-gray-200 text-sm bg-blue-900/25 border border-blue-500/40 rounded-lg p-3 mb-4 leading-relaxed"></p>
+      <div id="level-result-ledger" class="hidden text-left mb-6"></div>
       <div class="flex gap-3 justify-center">
         <button id="level-result-next" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-6 rounded-lg uppercase text-sm hidden" data-i18n="btn_next_level">Next level</button>
         <button id="level-result-retry" class="bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-6 rounded-lg uppercase text-sm hidden" data-i18n="btn_retry_level">Retry</button>
@@ -235,7 +237,8 @@
     <div class="glass-panel rounded-2xl p-10 text-center border border-red-500/40 pointer-events-auto">
       <h2 id="gameover-title" class="text-4xl font-black text-red-400 mb-2">FACILITY DOWN</h2>
       <p id="gameover-reason" class="text-gray-400 mb-1"></p>
-      <p id="gameover-stats" class="text-gray-500 text-sm mb-6"></p>
+      <p id="gameover-stats" class="text-gray-500 text-sm mb-4"></p>
+      <div id="gameover-ledger" class="hidden text-left mb-6 max-w-xs mx-auto"></div>
       <button onclick="restartGame()" class="bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-8 rounded-lg uppercase" data-i18n="restart">Restart</button>
     </div>
   </div>
