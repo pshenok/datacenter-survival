@@ -4,16 +4,17 @@
 import { CONFIG } from "../core/config.js";
 import { i18n } from "../i18n.js";
 
-const TABS = ["basics", "buildings", "power", "heat", "events", "losses", "controls"];
+const TABS = ["basics", "buildings", "power", "heat", "cooling", "events", "losses", "controls"];
 let activeTab = "basics";
 
 function buildingRows() {
     return Object.entries(CONFIG.buildings).map(([type, c]) => {
-        const cap = c.chainRole === "load" && type === "crac"
+        const cap = c.drawKw !== undefined
             ? `${c.drawKw} kW ${i18n.t("faq_draw")}`
             : `${c.capacityKw} kW`;
-        const extra = type === "ups" ? ` · ${c.bufferSec}s ${i18n.t("faq_buffer")}`
-            : type === "crac" ? ` · ${i18n.t("faq_cools")} ${c.coolPerSec}/s, r=${c.radius}`
+        const extra = type === "chiller" ? ` · ${c.coolUnits} ${i18n.t("faq_loop_supply")}`
+            : type === "ups" ? ` · ${c.bufferSec}s ${i18n.t("faq_buffer")}`
+            : c.coolPerSec ? ` · ${i18n.t("faq_cools")} ${c.coolPerSec}/s, r=${c.radius}`
             : type === "rack" ? ` · $${c.revenuePerKwhServed}/kWh` : "";
         return `<div class="flex justify-between items-baseline py-1.5 border-b border-gray-800">
             <span class="text-white font-bold">${i18n.t("b_" + type)}</span>
@@ -39,6 +40,9 @@ function tabContent() {
             <p>${i18n.t("faq_heat_1")}</p>
             <p>${i18n.t("faq_heat_2")}</p>
             <p class="text-cyan-300">${i18n.t("faq_pue")}</p>`;
+        case "cooling": return `
+            <p>${i18n.t("faq_cool_1")}</p>
+            <p class="text-cyan-300">${i18n.t("faq_cool_2")}</p>`;
         case "events": return `
             <p>${i18n.t("faq_events_1")}</p>
             <p>${i18n.t("faq_events_2")}</p>

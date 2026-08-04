@@ -153,6 +153,16 @@ function runScript(cfg, elapsed) {
             // exploit test) on exactly the behaviour they were written for.
             STATE.gridOutage.scope = ev.scope || "all";
             STATE.gridOutage.endsAt = ev.atSec + ev.durationSec;
+        } else if (ev.kind === "chiller_fail") {
+            // Kills the plant, not a head: everything drinking from the loop
+            // stops at once, which is the whole point of the lesson.
+            for (const b of STATE.buildings) {
+                if (b.type === "chiller" && !b.broken) {
+                    b.broken = true;
+                    b.repairAt = Infinity;   // this one does not self-heal
+                    break;
+                }
+            }
         } else if (ev.kind === "tariff" && !STATE.tariff.active) {
             STATE.tariff.active = true;
             STATE.tariff.multiplier = ev.multiplier;

@@ -173,12 +173,13 @@ export function resolvePower(dt) {
     for (const b of STATE.buildings) {
         if (b.config.chainRole !== "load") continue;
         let req;
-        if (b.type === "crac") {
-            // Part-load curve, not a straight line: a running CRAC pays its
-            // idle draw (fans, pumps) before it moves any heat at all, and
-            // the variable part rises sub-linearly with duty. A broken unit
-            // is off, not idling — sim/heat.js forces its duty to 0 and it
-            // must not bill.
+        if (b.config.drawKw !== undefined) {
+            // Every cooling machine — CRAC, CRAH, chiller plant — is billed
+            // on the same part-load curve, not a straight line: it pays its
+            // idle draw (fans, pumps, the tower) before it moves any heat at
+            // all, and the variable part rises sub-linearly with duty. A
+            // broken unit is off, not idling — sim/heat.js forces its duty
+            // to 0 and it must not bill.
             const duty = sanitize(b.duty, 0, 1);
             const full = b.config.drawKw || 0;
             const idle = Math.min(b.config.idleDrawKw || 0, full);
@@ -460,7 +461,7 @@ export function resolvePower(dt) {
     let coolKw = 0;
     for (const b of STATE.buildings) {
         if (b.type === "rack") itKw += b.actualKw;
-        else if (b.type === "crac") coolKw += b.actualKw;
+        else if (b.config.chainRole === "load") coolKw += b.actualKw;
     }
     STATE.itDrawKw = itKw;
     STATE.totalDrawKw = itKw + coolKw;

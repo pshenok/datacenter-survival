@@ -93,12 +93,80 @@ export function dissipateField(dt) {
 // heat is removed only while powered (actualKw > 0 — see the
 // one-tick-lag note in the header), proportionally to each cell's excess,
 // clamped so no cell drops below ambient.
+// The chilled-water loop. Every CRAH drinks from ONE pool filled by every
+// powered chiller plant: if the room asks for more cooling than the plant
+// makes, the ratio falls below 1 and EVERY CRAH is throttled by it —
+// shared efficiency and shared blast radius are the same property.
+//
+// Chillers carry the loop's utilisation in their own `duty`, so sim/power.js
+// bills them on the same part-load curve as everything else (one tick later,
+// the documented lag).
+//
+// BOTH sides count only machines that are actually RUNNING (powered, not
+// broken). A head fed by nothing is inert furniture: without the check, a
+// CRAH dropped on the floor and never wired — or one left on a dead bus —
+// would drink from the pool it cannot physically reach and throttle every
+// working head in the room, which is a punishment for owning a spare.
+function isRunning(b) {
+    return b.powered && !b.broken;
+}
+
+function updateCoolingLoop() {
+    let capacity = 0;
+    let demand = 0;
+    for (const b of STATE.buildings) {
+        if (!isRunning(b)) continue;
+        if (b.type === "chiller") capacity += b.config.coolUnits;
+        else if (b.type === "crah") demand += b.config.coolPerSec * b.duty;
+    }
+    const ratio = demand > 0 ? Math.min(1, capacity / demand) : 1;
+    STATE.coolingLoop.capacityUnits = capacity;
+    STATE.coolingLoop.demandUnits = demand;
+    STATE.coolingLoop.ratio = ratio;
+
+    const used = Math.min(demand, capacity);
+    for (const b of STATE.buildings) {
+        if (b.type !== "chiller") continue;
+        // A plant that nobody drinks from still pays its idle draw — that is
+        // exactly why one chiller behind one CRAH is worse than one CRAC.
+        // A plant that is DOWN reads as stopped, whatever its healthy twin is
+        // doing: duty drives both the bill and the spinning tower, so leaving
+        // it at the loop's utilisation would render a dead plant as busy.
+        b.duty = isRunning(b) && capacity > 0 ? Math.min(1, used / capacity) : 0;
+    }
+}
+
 export function applyCracCooling(dt) {
     if (dt === 0) return;
     const field = STATE.heatField;
     const ambient = currentAmbientC();
+    // Pass 1: every cooling head works out how hard it WANTS to run, from
+    // the heat it can actually reach. This is next tick's power request.
     for (const b of STATE.buildings) {
-        if (b.type !== "crac") continue;
+        if (b.type !== "crac" && b.type !== "crah") continue;
+        const { radius, coolPerSec } = b.config;
+        const x0 = Math.max(0, b.gx - radius);
+        const x1 = Math.min(N - 1, b.gx + radius);
+        const z0 = Math.max(0, b.gz - radius);
+        const z1 = Math.min(N - 1, b.gz + radius);
+        let localExcess = 0;
+        for (let z = z0; z <= z1; z++) {
+            for (let x = x0; x <= x1; x++) {
+                const e = field[z * N + x] - ambient;
+                if (e > 0) localExcess += e;
+            }
+        }
+        b.duty = coolPerSec > 0 && !b.broken ? Math.min(1, localExcess / coolPerSec) : 0;
+    }
+
+    // Pass 2: settle the shared loop from those wants.
+    updateCoolingLoop();
+
+    // Pass 3: actually move the heat. A CRAC delivers its own duty; a CRAH
+    // delivers duty x the loop ratio, because it can only spend what the
+    // plant made.
+    for (const b of STATE.buildings) {
+        if (b.type !== "crac" && b.type !== "crah") continue;
         const { radius, coolPerSec } = b.config;
         const x0 = Math.max(0, b.gx - radius);
         const x1 = Math.min(N - 1, b.gx + radius);
@@ -113,12 +181,15 @@ export function applyCracCooling(dt) {
             }
         }
 
-        const duty = coolPerSec > 0 && !b.broken ? Math.min(1, localExcess / coolPerSec) : 0;
-        b.duty = duty;
+        const duty = b.duty;
+        // A CRAH can only spend what the plant made. An over-committed or
+        // failed loop throttles every head on it at once, which an air-cooled
+        // CRAC beside it does not even notice.
+        const delivered = b.config.needsLoop ? duty * STATE.coolingLoop.ratio : duty;
 
-        if (b.actualKw <= 0 || duty === 0 || localExcess === 0) continue;
+        if (b.actualKw <= 0 || delivered <= 0 || localExcess === 0) continue;
 
-        const totalRemove = coolPerSec * duty * dt;
+        const totalRemove = coolPerSec * delivered * dt;
         for (let z = z0; z <= z1; z++) {
             for (let x = x0; x <= x1; x++) {
                 const i = z * N + x;

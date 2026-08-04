@@ -52,6 +52,30 @@ export function attachMesh(b) {
             mesh.add(led);
             break;
         }
+        case "chiller": {
+            mesh = new THREE.Mesh(new THREE.BoxGeometry(T * 0.9, T * 0.7, T * 0.9), mat);
+            mesh.position.y = T * 0.35;
+            const tower = new THREE.Mesh(
+                new THREE.CylinderGeometry(T * 0.26, T * 0.3, T * 0.42, 10),
+                new THREE.MeshBasicMaterial({ color: 0x7dd3fc })
+            );
+            tower.position.set(0, T * 0.56, 0);
+            tower.name = "fan";
+            mesh.add(tower);
+            break;
+        }
+        case "crah": {
+            mesh = new THREE.Mesh(new THREE.BoxGeometry(T * 0.5, T * 0.62, T * 0.36), mat);
+            mesh.position.y = T * 0.31;
+            const grille = new THREE.Mesh(
+                new THREE.TorusGeometry(T * 0.13, T * 0.035, 8, 18),
+                new THREE.MeshBasicMaterial({ color: 0xbae6fd })
+            );
+            grille.position.set(0, 0, T * 0.2);
+            grille.name = "fan";
+            mesh.add(grille);
+            break;
+        }
         case "crac": {
             mesh = new THREE.Mesh(new THREE.BoxGeometry(T * 0.7, T * 0.58, T * 0.42), mat);
             mesh.position.y = T * 0.29;
@@ -139,9 +163,15 @@ export function tickMeshes(dt) {
                 led.material.color.setRGB(0.1 + 0.8 * u, 0.9 - 0.6 * u, 0.15);
             }
         }
-        if (b.type === "crac") {
+        if (b.type === "crac" || b.type === "crah" || b.type === "chiller") {
             const fan = b.mesh.getObjectByName("fan");
-            if (fan) fan.rotation.z += dt * 6 * (b.duty || 0);
+            // Every fan spins on its OWN duty, which is exactly what the
+            // power bill charges for. A CRAH starved of chilled water keeps
+            // turning and keeps costing money — the alarm belongs on the
+            // racks it failed to cool (thermal badges) and in its inspect
+            // panel, not in a stopped fan that would deny the draw beside it.
+            // A dead plant's tower does stop: sim/heat.js zeroes its duty.
+            if (fan) fan.rotation[b.type === "chiller" ? "y" : "z"] += dt * 6 * (b.duty || 0);
         }
     }
 }

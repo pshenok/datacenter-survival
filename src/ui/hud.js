@@ -140,6 +140,21 @@ export function renderInspect(b) {
         // very mechanic it should be exposing.
         rows.push(row(i18n.t("insp_draw"), `${b.actualKw.toFixed(1)} kW`));
         rows.push(row(i18n.t("insp_duty"), `${Math.round(b.duty * 100)}%`));
+    } else if (b.type === "chiller") {
+        rows.push(row(i18n.t("insp_draw"), `${b.actualKw.toFixed(1)} kW`));
+        rows.push(row(i18n.t("insp_loop"),
+            `${Math.round(STATE.coolingLoop.demandUnits)} / ${Math.round(STATE.coolingLoop.capacityUnits)}`));
+        if (STATE.coolingLoop.ratio < 0.999) {
+            rows.push(`<div class="text-amber-300 text-[11px] mt-1">${i18n.t("insp_loop_starved")}</div>`);
+        }
+    } else if (b.type === "crah") {
+        rows.push(row(i18n.t("insp_draw"), `${b.actualKw.toFixed(1)} kW`));
+        rows.push(row(i18n.t("insp_duty"), `${Math.round(b.duty * STATE.coolingLoop.ratio * 100)}%`));
+        if (STATE.coolingLoop.capacityUnits <= 0) {
+            rows.push(`<div class="text-red-400 font-bold text-[11px] mt-1">${i18n.t("insp_no_loop")}</div>`);
+        } else if (STATE.coolingLoop.ratio < 0.999) {
+            rows.push(`<div class="text-amber-300 text-[11px] mt-1">${i18n.t("insp_loop_starved")}</div>`);
+        }
     } else if (b.type === "ups") {
         rows.push(row(i18n.t("insp_buffer"), `${b.bufferLeft.toFixed(1)}s / ${b.config.bufferSec}s`));
     } else if (b.type === "generator") {

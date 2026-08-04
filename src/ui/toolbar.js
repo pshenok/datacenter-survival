@@ -12,6 +12,8 @@ const ICONS = {
     generator: '<rect x="4" y="9" width="13" height="9" rx="1"/><path d="M17 12h3v4h-3M7 9V6h4v3M9 12.5l-1.5 2h3L9 16.5"/>',
     rack: '<rect x="7" y="4" width="10" height="17" rx="1"/><path d="M9 8h6M9 12h6M9 16h6"/>',
     crac: '<rect x="4" y="7" width="16" height="11" rx="1"/><circle cx="12" cy="12.5" r="3"/><path d="M12 9.5v6M9.4 11l5.2 3M9.4 14l5.2-3"/>',
+    chiller: '<rect x="3" y="9" width="18" height="10" rx="1"/><path d="M7 9V6h10v3M9 13h6M12 11v4"/><path stroke-linecap="round" d="M5 22c1.2-1.6 2.4-1.6 3.6 0M11 22c1.2-1.6 2.4-1.6 3.6 0"/>',
+    crah: '<rect x="7" y="5" width="10" height="15" rx="1"/><circle cx="12" cy="12" r="2.6"/><path stroke-linecap="round" d="M3 8h3M3 12h3M3 16h3"/>',
 };
 
 export function renderPalette(onPick) {

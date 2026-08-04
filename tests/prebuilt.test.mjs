@@ -280,3 +280,67 @@ describe("chapter wiring", () => {
         }
     });
 });
+
+describe("L11 water_loop — the cooling decision, and nothing else", () => {
+    const HEADS = [[12, 6], [16, 6], [14, 4], [14, 9]];
+    const coolBus = (made) => made[10];
+
+    it("LOSE: four CRACs hold the temperature and miss the efficiency target", () => {
+        const made = start("water_loop");
+        for (const [gx, gz] of HEADS) connect(coolBus(made), placeBuilding("crac", gx, gz));
+        runLevel("water_loop");
+        expect(STATE.campaign.done).toBe("failed");
+        const cool = STATE.campaign.objectives.find((o) => o.type === "no_throttle");
+        const pue = STATE.campaign.objectives.find((o) => o.type === "pue_below");
+        expect(cool.done).toBe(true);     // the room is fine…
+        expect(pue.done).toBe(false);     // …the bill is not
+    });
+
+    it("WIN: one plant making chilled water for four heads clears the same job for less", () => {
+        const made = start("water_loop");
+        connect(coolBus(made), placeBuilding("chiller", 20, 16));
+        for (const [gx, gz] of HEADS) connect(coolBus(made), placeBuilding("crah", gx, gz));
+        expect(STATE.money).toBeGreaterThanOrEqual(0);   // $600 covers it
+        runLevel("water_loop");
+        expect(STATE.campaign.done).toBe("won");
+    });
+
+    it("LOSE: heads without a plant are furniture", () => {
+        const made = start("water_loop");
+        for (const [gx, gz] of HEADS) connect(coolBus(made), placeBuilding("crah", gx, gz));
+        runLevel("water_loop");
+        expect(STATE.campaign.done).toBe("failed");
+        expect(of("rack").some((r) => r.throttleFactor < 1)).toBe(true);
+    });
+});
+
+describe("L12 single_point_of_cold — the day the plant stops", () => {
+    it("LOSE: the room as handed over runs on one plant and cooks when it fails", () => {
+        start("single_point_of_cold");
+        runLevel("single_point_of_cold");
+        expect(STATE.campaign.done).toBe("failed");
+        expect(of("chiller")[0].broken).toBe(true);
+        expect(of("rack").some((r) => r.throttleFactor < 1)).toBe(true);
+    });
+
+    it("LOSE: another CRAH drinks from the same dead plant", () => {
+        const made = start("single_point_of_cold");
+        connect(made[10], placeBuilding("crah", 12, 9));
+        runLevel("single_point_of_cold");
+        expect(STATE.campaign.done).toBe("failed");
+    });
+
+    it("WIN: swap two heads for air-cooled units — a second FAILURE MODE, not a second unit", () => {
+        const made = start("single_point_of_cold");
+        const heads = of("crah");
+        demolishBuilding(heads[2]);
+        demolishBuilding(heads[3]);
+        for (const [gx, gz] of [[14, 4], [14, 9]]) {
+            const c = placeBuilding("crac", gx, gz);
+            expect(typeof c).not.toBe("string");
+            connect(made[10], c);
+        }
+        runLevel("single_point_of_cold");
+        expect(STATE.campaign.done).toBe("won");
+    });
+});

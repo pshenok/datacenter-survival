@@ -68,6 +68,46 @@ export const CONFIG = {
             throttleStartC: 45,  // linear throttle begins
             shutdownC: 70,       // serves nothing at/above this
         },
+        // ---- Two-stage cooling: the water loop -------------------------
+        // A CRAC is self-contained: it compresses its own refrigerant and
+        // pays for it, everywhere, at every scale. A CHILLER plant makes
+        // chilled water once, efficiently, and CRAHs spend it with nothing
+        // but fans — which is why hyperscalers run near PUE 1.1 and a server
+        // closet runs near 1.8.
+        //
+        // The trade is real in both directions and the numbers are chosen to
+        // make it felt: at full utilisation the loop moves heat for ~30% less
+        // power per unit than CRACs, but a chiller feeding a single CRAH is
+        // WORSE than one CRAC, because the plant pays its idle draw whether
+        // or not anyone is drinking from it. Scale is the whole argument.
+        //
+        // And the shared efficiency is a shared blast radius: every CRAH
+        // drinks from one pool, so an over-committed or broken plant
+        // degrades the entire room proportionally, while an air-cooled CRAC
+        // beside it keeps working. That is the same decision seen from two
+        // sides, which is the lesson.
+        chiller: {
+            name: "Chiller Plant",
+            cost: 260,
+            capacityKw: 0,
+            chainRole: "load",
+            drawKw: 6,           // at full utilisation of the loop
+            idleDrawKw: 1.5,     // pumps and the tower run regardless
+            partLoadExp: 0.7,
+            coolUnits: 45,       // chilled-water capacity it supplies
+        },
+        crah: {
+            name: "CRAH Unit",
+            cost: 70,
+            capacityKw: 0,
+            chainRole: "load",
+            drawKw: 0.7,         // fans only — the compression happened upstream
+            idleDrawKw: 0.25,
+            partLoadExp: 0.7,
+            coolPerSec: 10,      // same cooling as a CRAC, a fraction of the power
+            radius: 3,
+            needsLoop: true,     // useless without chilled water
+        },
         crac: {
             name: "CRAC Unit",
             cost: 110,
@@ -230,6 +270,7 @@ export const CONFIG = {
             { id: "ch1", titleKey: "ch1_title", levels: ["first_watt", "hot_aisle", "the_bill", "sag", "dark_chain"] },
             { id: "ch2", titleKey: "ch2_title", levels: ["fuel_clock"] },
             { id: "ch3", titleKey: "ch3_title", levels: ["over_cooled", "one_bus", "cold_room", "two_utilities"] },
+            { id: "ch4", titleKey: "ch4_title", levels: ["water_loop", "single_point_of_cold"] },
         ],
         levels: {
             // Teach: the delivery chain. Wire feed→transformer→ups→pdu→rack
@@ -439,6 +480,85 @@ export const CONFIG = {
                 },
                 objectives: [{ type: "serve_kwh_during_event", event: "outage", target: 7 }],
             },
+
+            // ---- Chapter 4: SCALE ---------------------------------------
+
+            // Teach: why hyperscalers run near PUE 1.1 and a closet runs
+            // near 1.8. The IT side is handed over already built — the whole
+            // level is the cooling decision. Four CRACs cannot reach the cap
+            // (they each compress their own refrigerant); one chiller plant
+            // making chilled water for four CRAHs can.
+            water_loop: {
+                startMoney: 600,
+                timeLimitSec: 220,
+                demandKw: 24,
+                script: [{ atSec: 0, kind: "heatwave", durationSec: 100000 }],
+                preBuilt: {
+                    buildings: [
+                        { type: "grid_feed", gx: 2, gz: 5 },
+                        { type: "transformer", gx: 5, gz: 5 },
+                        { type: "pdu", gx: 8, gz: 4 },
+                        { type: "pdu", gx: 8, gz: 8 },
+                        { type: "rack", gx: 13, gz: 5 },
+                        { type: "rack", gx: 15, gz: 5 },
+                        { type: "rack", gx: 13, gz: 8 },
+                        { type: "rack", gx: 15, gz: 8 },
+                        { type: "grid_feed", gx: 2, gz: 16 },
+                        { type: "transformer", gx: 5, gz: 16 },
+                        { type: "pdu", gx: 8, gz: 16 },     // the cooling bus, empty
+                    ],
+                    wires: [
+                        [0, 1], [1, 2], [1, 3],
+                        [2, 5], [2, 7], [3, 4], [3, 6],
+                        [8, 9], [9, 10],
+                    ],
+                },
+                objectives: [
+                    { type: "no_throttle", holdSec: 40, afterSec: 70 },
+                    { type: "pue_below", value: 1.32, holdSec: 40, afterSec: 70 },
+                ],
+            },
+
+            // Teach: shared efficiency is a shared blast radius. The room
+            // arrives on a single plant — beautifully efficient, and one
+            // failure from cooking. The fix is not more cooling, it is
+            // cooling that does not all fail together.
+            single_point_of_cold: {
+                startMoney: 200,
+                timeLimitSec: 200,
+                demandKw: 24,
+                script: [
+                    { atSec: 0, kind: "heatwave", durationSec: 100000 },
+                    { atSec: 60, kind: "chiller_fail" },
+                ],
+                preBuilt: {
+                    buildings: [
+                        { type: "grid_feed", gx: 2, gz: 5 },
+                        { type: "transformer", gx: 5, gz: 5 },
+                        { type: "pdu", gx: 8, gz: 4 },
+                        { type: "pdu", gx: 8, gz: 8 },
+                        { type: "rack", gx: 13, gz: 5 },
+                        { type: "rack", gx: 15, gz: 5 },
+                        { type: "rack", gx: 13, gz: 8 },
+                        { type: "rack", gx: 15, gz: 8 },
+                        { type: "grid_feed", gx: 2, gz: 16 },
+                        { type: "transformer", gx: 5, gz: 16 },
+                        { type: "pdu", gx: 8, gz: 16 },
+                        { type: "chiller", gx: 20, gz: 16 },
+                        { type: "crah", gx: 12, gz: 6 },
+                        { type: "crah", gx: 16, gz: 6 },
+                        { type: "crah", gx: 14, gz: 4 },
+                        { type: "crah", gx: 14, gz: 9 },
+                    ],
+                    wires: [
+                        [0, 1], [1, 2], [1, 3],
+                        [2, 5], [2, 7], [3, 4], [3, 6],
+                        [8, 9], [9, 10],
+                        [10, 11], [10, 12], [10, 13], [10, 14], [10, 15],
+                    ],
+                },
+                objectives: [{ type: "serve_kwh", target: 70 }],
+            },
         },
     },
 
@@ -451,6 +571,8 @@ export const CONFIG = {
         generator: 0xa8a29e,
         rack: 0x34d399,
         crac: 0x60a5fa,
+        chiller: 0x0ea5e9,
+        crah: 0x38bdf8,
         wire: 0xfde047,
         wireStandby: 0x94a3b8,
         overlayCold: 0x2563eb,

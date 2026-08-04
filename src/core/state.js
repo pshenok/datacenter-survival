@@ -15,6 +15,12 @@ export const STATE = {
     // heat field, row-major gridSize x gridSize, degrees-ish
     heatField: new Float32Array(CONFIG.gridSize * CONFIG.gridSize).fill(CONFIG.heat.ambientC),
 
+    // Chilled-water loop (owned by sim/heat.js). Every CRAH drinks from one
+    // shared pool: ratio < 1 means the plant is over-committed and EVERY
+    // CRAH is throttled proportionally — the cooling analogue of a browned
+    // out power link, and the price of shared efficiency.
+    coolingLoop: { capacityUnits: 0, demandUnits: 0, ratio: 1 },
+
     // demand & delivery (owned by sim/demand.js)
     demandKw: 0,
     servedKw: 0,
@@ -78,6 +84,7 @@ export function resetState() {
     STATE.buildings = [];
     STATE.wires = [];
     STATE.heatField = new Float32Array(CONFIG.gridSize * CONFIG.gridSize).fill(CONFIG.heat.ambientC);
+    STATE.coolingLoop = { capacityUnits: 0, demandUnits: 0, ratio: 1 };
     STATE.demandKw = 0;
     STATE.servedKw = 0;
     STATE.demandFixedKw = null;
