@@ -49,8 +49,11 @@ export function renderCampaignLevels() {
             const unlocked = isLevelUnlocked(id, done);
             const finished = done.includes(id);
             const n = order.indexOf(id) + 1;
+            // A star next to the tick when every bonus on the level is taken.
+            const bonusCfg = CONFIG.campaign.levels[id].bonuses || [];
+            const gotAll = bonusCfg.length > 0 && (earned[id] || []).length >= bonusCfg.length;
             const mark = finished
-                ? '<span class="text-emerald-400">✓</span>'
+                ? `<span class="text-emerald-400">✓</span>${gotAll ? '<span class="text-amber-300">★</span>' : ""}`
                 : unlocked ? `<span class="text-gray-500">${n}</span>`
                     : '<span class="text-gray-700">🔒</span>';
             const cls = unlocked
@@ -58,7 +61,7 @@ export function renderCampaignLevels() {
                 : "glass-panel opacity-40 cursor-not-allowed";
             return `<button data-level="${id}" ${unlocked ? "" : "disabled"}
                 class="${cls} w-full text-left rounded-lg px-4 py-3 mb-2 flex items-center gap-3">
-                <span class="w-5 text-center font-bold">${mark}</span>
+                <span class="w-8 text-center font-bold whitespace-nowrap">${mark}</span>
                 <span class="flex-1">
                     <span class="block text-sm font-bold text-white">${i18n.t("lv_" + id)}</span>
                     <span class="block text-[11px] text-gray-500">${i18n.t("lv_" + id + "_brief")}</span>
