@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question about the simulation or the code
+    url: https://github.com/pshenok/datacenter-survival/discussions/categories/q-a
+    about: Stuck on the tick order, the power model, a test that will not go red — ask in Q&A.
+  - name: Rough idea, not a worked-out proposal
+    url: https://github.com/pshenok/datacenter-survival/discussions/categories/ideas
+    about: Half-formed mechanics and "what if" go to Discussions first; the proposal form is for ideas you have already sharpened.
+  - name: Show a run, a screenshot, or a level you built
+    url: https://github.com/pshenok/datacenter-survival/discussions/categories/show-and-tell
+    about: PUE numbers you are proud of, rooms you built, disasters you survived.

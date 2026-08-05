@@ -27,10 +27,12 @@ totals it in dollars.*
   generator carries the rest, for exactly as long as there is fuel in it.
 - **Heat spreads.** Every kW a rack draws becomes heat in the cells around
   it. CRAC units cool a radius — and draw power themselves, idle draw
-  included, so two half-loaded units cost more than one working one. That is
-  why your **PUE** (total facility power ÷ IT power) is both your score and
-  your power bill. Press **T** for the thermal overlay and watch hot aisles
-  form from your own layout.
+  included, so two half-loaded units cost more than one working one. Above a
+  certain size a **chiller** making chilled water for many **CRAH** heads
+  beats cooling everywhere at once; below it, the plant's pumps cost more
+  than they save. That is why your **PUE** (total facility power ÷ IT power)
+  is both your score and your power bill. Press **T** for the thermal overlay
+  and watch hot aisles form from your own layout.
 
 Overheated racks throttle, throttled racks miss SLA, missed SLA drains
 reputation and money. And every kilowatt you fail to serve is **named**:
@@ -39,7 +41,7 @@ the run in dollars — `Where the $65 went: AT CAPACITY 61%, TOO HOT 20%…`.
 
 ## The campaign
 
-Ten levels in three chapters, each teaching one mechanic and each proven —
+Twelve levels in four chapters, each teaching one mechanic and each proven —
 by machine-played tests — to be **winnable with that mechanic and losable
 without it**.
 
@@ -52,6 +54,9 @@ without it**.
   running and already wrong: four CRACs burying the PUE, four racks sharing
   one bus until its breaker opens, cooling installed in the wrong corner,
   and two "redundant" feeds that turn out to share a substation.
+- **Chapter 4 · Scale** — one chiller plant feeding many cooling
+  heads: cheaper than cooling everywhere at once, right up until the day the
+  plant stops and every head on it stops together.
 
 Optional bonus objectives sit on a different axis than the level's own goal
 — serve *through* the sag, or bridge three blackouts and still finish with
@@ -65,12 +70,20 @@ money in the bank.
 - Redundancy that is real (independent substations) versus redundancy that
   is decoration
 - Batteries bridge seconds, generators carry hours, fuel is the actual limit
+- Shared cooling is shared efficiency and shared blast radius — the same
+  property, and scale decides which one you get
 - Diagnosis: reading an attribution ledger instead of guessing
 
 ## Running it
 
-Clone and open `index.html` — that's the whole setup. **No build step**: the
-repo is served raw by GitHub Pages, native ES modules, Three.js from CDN.
+**No build step**: the repo is served raw by GitHub Pages, native ES modules,
+Three.js from CDN. But it does need a *server* — the game is ES modules, and
+browsers block those over `file://`, so double-clicking `index.html` gives you
+a HUD over an empty screen. Any static server works:
+
+```bash
+python3 -m http.server 8000    # then open http://localhost:8000
+```
 
 For contributors: `npm i && npm run check` runs ESLint and the Vitest suite.
 The simulation is tested headless (power conservation, heat conservation,
@@ -81,12 +94,27 @@ real playthrough.
 
 ## Status
 
-Ten campaign levels across three chapters, seven buildings, 247 tests.
+Twelve campaign levels across four chapters, nine buildings, 259 tests.
 Simulation: wired power with inverse-time breakers, a diffusing heat field
-with part-load cooling, UPS buffers, standby generators with fuel, grid sags,
-per-substation outages, peak tariffs, rolling contracts, and per-cause loss
-attribution. English and Ukrainian.
+with part-load cooling, a shared chilled-water loop, UPS buffers, standby
+generators with fuel, grid sags, per-substation outages, peak tariffs,
+rolling contracts, and per-cause loss attribution. English and Ukrainian.
 
-Roadmap ([#5](https://github.com/pshenok/datacenter-survival/issues/5)):
-two-stage cooling (chillers + towers), water usage, time-of-use tariff
-strategy, and a Lab level with live knobs.
+Next: time-of-use tariffs
+([#4](https://github.com/pshenok/datacenter-survival/issues/4)) — day/night
+pricing, pre-cooling and peak shaving — and a Lab level with live knobs, the
+last open item on the roadmap
+([#5](https://github.com/pshenok/datacenter-survival/issues/5)).
+
+## Contributing
+
+The bar is that a mechanic has to teach something true — a mechanic that
+plays well and models the physics dishonestly is a bug. Everything a
+contributor needs is in [CONTRIBUTING.md](CONTRIBUTING.md), with the
+invariants behind it in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+Starting points: anything tagged
+[good first issue](https://github.com/pshenok/datacenter-survival/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+is a real, verified gap with the fix already located. Questions and mechanic
+proposals go to
+[Discussions](https://github.com/pshenok/datacenter-survival/discussions).

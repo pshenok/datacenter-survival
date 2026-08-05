@@ -1,0 +1,93 @@
+name: Mechanic or building proposal
+description: Propose a new mechanic, building, crisis, objective type or level — and show how it could be proven
+title: "[mechanic] "
+labels: ["mechanic"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every mechanic in this game clears the same bar:
+
+        1. it teaches something a real datacenter actually does,
+        2. it forces a decision the player can get wrong in **both** directions, and
+        3. it can be machine-proven — a build that wins with it, and the same room losing without it.
+
+        A mechanic that is strictly better than not having it is not a decision, it is a purchase.
+        A level that cannot be lost teaches nothing. This form is those three questions.
+
+  - type: dropdown
+    id: shape
+    attributes:
+      label: What shape is this?
+      options:
+        - A new building type
+        - A new crisis or scripted event
+        - A new objective or bonus type
+        - A new campaign level using existing mechanics
+        - A change to how an existing mechanic behaves
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: teaches
+    attributes:
+      label: What real datacenter behaviour does this teach?
+      description: |
+        Name the real thing. A reference helps — a Tier standard, an ASHRAE envelope, a utility tariff
+        structure, an outage post-mortem, your own operations experience. "It would be fun" belongs in
+        the last field, not this one.
+      placeholder: |
+        Free cooling: below a wet-bulb threshold a plant rejects heat without running the compressors, so
+        cooling cost is a function of outside conditions, not just IT load. Operators size for the worst
+        hour and pay for the average one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: decision
+    attributes:
+      label: What decision does it force, and what does the player give up either way?
+      description: |
+        State the trade-off in both directions. If the answer to "when would you NOT want this?" is
+        "never", the mechanic is not ready.
+      placeholder: |
+        It costs capital and idle draw that never pay back in a small, cool room — the chilled-water loop
+        already loses to plain CRACs at one rack for exactly this reason. It only wins once the room is
+        big enough and the heatwave short enough. So: pay now for a saving that only exists in some
+        weather, or skip it and eat the tariff.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proof
+    attributes:
+      label: How would a level prove it?
+      description: |
+        Sketch the WIN case and the LOSE case. LOSE is the same room built WITHOUT the mechanic, scoring
+        provably short — that is the contract every level in the game already meets.
+      placeholder: |
+        WIN: 24 kW room, scripted heatwave for only the last third of the clock. Player buys the unit,
+        rides the cool stretch at low cooling draw, clears the PUE objective.
+        LOSE: same room, compressors only. Holds the temperature fine, misses the PUE target — the same
+        shape as `water_loop`'s losing build.
+    validations:
+      required: true
+
+  - type: textarea
+    id: numbers
+    attributes:
+      label: Rough numbers, if you have them
+      description: |
+        Cost, draw, capacity, thresholds. Everything tunable lives in `src/core/config.js`, and a mechanic
+        usually stands or falls on whether a number can be found that makes both directions real.
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Why it would be fun, prior art in other games, what you would need help with.
+    validations:
+      required: false

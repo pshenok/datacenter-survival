@@ -1,0 +1,131 @@
+name: Bug report
+description: A physics result that is wrong, a number that disagrees with the sim, a level that misbehaves, a bad string, or a rendering problem
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This game is a teaching tool, so "the simulation taught me the wrong thing" is a real bug here — not a nitpick.
+        Be concrete: the number you saw, the number you expected, and where.
+
+        Before filing: the game **cannot** run from `file://`. Browsers block ES module scripts on a `file://`
+        origin, so double-clicking `index.html` gives you the HUD over a blank canvas. Serve the folder over
+        HTTP (`python3 -m http.server 8000`) and open `http://localhost:8000/`.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of bug is this?
+      options:
+        - The simulation is wrong (it produces a result a real datacenter would not)
+        - A number in the UI disagrees with the simulation (HUD, inspector, FAQ, legend, ledger)
+        - A campaign level is unwinnable, or winnable without the mechanic it teaches
+        - A locale string is wrong, untranslated, or reads like a machine translation
+        - Rendering, 3D or layout problem in a specific browser
+        - A control does nothing (button, tool, keyboard shortcut)
+        - Progress or settings problem (campaign progress, bonuses, best run, language)
+        - Something else
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build
+    attributes:
+      label: Which build?
+      options:
+        - Deployed build (https://pshenok.github.io/datacenter-survival/)
+        - Local checkout, served over HTTP
+        - Local checkout, opened some other way
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did it happen?
+      description: The mode or campaign level. If it spans several, pick the one you can reproduce fastest.
+      options:
+        - Free play (Power On)
+        - Tutorial
+        - Main menu, level select, or briefing screen
+        - "Chapter 1 - First Watt (first_watt)"
+        - "Chapter 1 - Hot Aisle (hot_aisle)"
+        - "Chapter 1 - The Bill (the_bill)"
+        - "Chapter 1 - Sag (sag)"
+        - "Chapter 1 - Dark Chain (dark_chain)"
+        - "Chapter 2 - Fuel Clock (fuel_clock)"
+        - "Chapter 3 - Three Too Many (over_cooled)"
+        - "Chapter 3 - One Bus (one_bus)"
+        - "Chapter 3 - Cold Room (cold_room)"
+        - "Chapter 3 - Two Utilities (two_utilities)"
+        - "Chapter 4 - The Water Loop (water_loop)"
+        - "Chapter 4 - Single Point of Cold (single_point_of_cold)"
+        - Not tied to a level (FAQ, pause menu, language switch, docs)
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      description: Name and version, plus the OS. Rendering bugs are usually browser-specific.
+      placeholder: "Chrome 141 on macOS 15.5 / Firefox 145 on Ubuntu 24.04 / Safari 18 on iPadOS"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected instead
+      description: |
+        Give the numbers where you have them. "The rack drew 6 kW while the PDU showed 4.2 kW served"
+        beats "power is broken". If this is a wrong-physics report, say what a real datacenter would do.
+      placeholder: |
+        The HUD said PUE 1.24 while two CRACs ran at full duty against 12 kW of IT load. That much
+        cooling draw should put PUE nearer 1.6.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact build order and wiring if it is a sim bug — the room you built is the input to the simulation.
+      placeholder: |
+        1. Start Chapter 1 - The Bill
+        2. Grid feed, transformer beside it, wire feed -> transformer
+        3. PDU wired to the transformer, two racks wired to the PDU
+        4. Press Play, let the clock run to 0:40
+        5. Open the inspector on the second rack
+    validations:
+      required: true
+
+  - type: textarea
+    id: console_output
+    attributes:
+      label: Console output
+      description: Paste any errors verbatim. Leave empty if the console was clean.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or anything else
+      description: |
+        Screenshots help for rendering, HUD and overlay bugs. For a locale report, paste the exact string
+        and how you would say it instead. For an unwinnable level, describe the build you believe should win.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you file
+      options:
+        - label: I opened the browser console and pasted any errors above, or confirmed there were none.
+          required: true
+        - label: I searched open issues and this is not already reported.
+          required: false
