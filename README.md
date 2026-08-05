@@ -76,10 +76,16 @@ money in the bank.
 
 ## Running it
 
-**No build step**: the repo is served raw by GitHub Pages, native ES modules,
-Three.js from CDN. But it does need a *server* — the game is ES modules, and
-browsers block those over `file://`, so double-clicking `index.html` gives you
-a HUD over an empty screen. Any static server works:
+**To play, click [PLAY NOW](https://pshenok.github.io/datacenter-survival/).**
+Nothing to install, nothing to build, no account. That is the whole setup.
+
+**No build step** anywhere: the repo is served raw by GitHub Pages — native ES
+modules, Three.js from CDN, not a line of it compiled. To run *your own copy*
+(a fork, or a change you just made) you need a static server rather than the
+file itself, because browsers fetch module scripts in CORS mode and a
+`file://` origin is opaque to them. Double-clicking `index.html` gets you a
+HUD over an empty screen. One line fixes it, and it is already on your
+machine:
 
 ```bash
 python3 -m http.server 8000    # then open http://localhost:8000
