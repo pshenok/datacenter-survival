@@ -236,6 +236,38 @@ export const CONFIG = {
         },
     },
 
+    // ---- time-of-use meter ------------------------------------------------
+    // PUE is efficiency; the tariff is TIMING. Two rooms with identical PUE
+    // can hand you very different bills, and this is the mechanic that says
+    // so: a deterministic day/night cycle you can read off the clock and plan
+    // against, multiplied by the random peak window above.
+    //
+    // The bands average to EXACTLY 1.0 over a period (0.6 night + 1.4 day),
+    // so this is not a difficulty knob — a player who ignores it pays what
+    // they paid before, in the long run. Everything it is worth comes from
+    // moving load, not from using less.
+    //
+    // 120 s gives a 240 s level two full cycles: long enough to plan the
+    // second one from what the first one cost you, short enough that a
+    // 20-30 s peak window is a meaningful slice of a band.
+    //
+    // OPT-IN, via STATE.tariff.cycleOn. Free play and the levels that teach
+    // it switch it on; the twelve levels proven against a flat meter stay
+    // proven, and their machine-played pairs keep meaning what they meant.
+    tariff: {
+        periodSec: 120,
+        // Sorted by fromSec, first band must start at 0. tariffCycleMul()
+        // takes the last band whose fromSec has passed within the period.
+        bands: [
+            { fromSec: 0, mult: 0.6, key: "night" },
+            { fromSec: 60, mult: 1.4, key: "day" },
+        ],
+        // How far ahead the HUD announces the next band. The whole point is
+        // that this schedule is knowable in advance — a tariff you cannot
+        // see coming teaches nothing but resentment.
+        warningSec: 15,
+    },
+
     // ---- Rolling mini-contracts (sim/contracts.js) --------------------
     // One active at a time, drawn every minIntervalSec..maxIntervalSec of
     // game time. demandShare targets scale with the demand curve at draw

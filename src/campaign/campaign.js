@@ -119,6 +119,10 @@ export function startLevelState(id) {
     STATE.gridOutage.nextAt = Infinity;
     STATE.tariff.nextAt = Infinity;
     STATE.contract.nextAt = Infinity;
+    // The day/night meter is per-level, and off unless the level teaches it.
+    // Switching it on globally would re-price all twelve existing levels and
+    // quietly invalidate the machine-played pairs that make them lessons.
+    STATE.tariff.cycleOn = cfg.tariffCycle === true;
 
     STATE.campaign = {
         levelId: id,

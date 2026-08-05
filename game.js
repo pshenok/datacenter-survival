@@ -6,7 +6,7 @@ import { STATE, resetState } from "./src/core/state.js";
 import { resetBuildingIds } from "./src/entities/Building.js";
 import { resolvePower } from "./src/sim/power.js";
 import { tickHeat } from "./src/sim/heat.js";
-import { tickDemand, tickEvents, upcomingWave } from "./src/sim/demand.js";
+import { tickDemand, tickEvents, upcomingWave, upcomingBand } from "./src/sim/demand.js";
 import { tickCrisis } from "./src/sim/crisis.js";
 import { tickContracts } from "./src/sim/contracts.js";
 import { scene, camera, renderer, resetCamera, focusWorld, gridToWorld, buildingGroup, wireGroup } from "./src/ui/scene.js";
@@ -26,6 +26,7 @@ import { i18n } from "./src/i18n.js";
 
 let lastTime = 0;
 let warnedWaveAt = 0;
+let warnedBandKey = null;
 let heatwaveWasActive = false;
 let brownoutWasActive = false;
 let brokenIds = new Set();
@@ -56,6 +57,20 @@ function tick(dt) {
     if (wave && wave.atSec !== warnedWaveAt) {
         warnedWaveAt = wave.atSec;
         showBanner(i18n.t("wave_warning", { mult: wave.multiplier }), 5000);
+    }
+    // The band change is announced, not sprung. A price you can only learn
+    // by being charged it is a punishment; a price you can see coming is a
+    // plan — and the plan is the entire mechanic.
+    const band = upcomingBand(STATE.elapsedGameTime);
+    if (band && band.band.key !== warnedBandKey) {
+        warnedBandKey = band.band.key;
+        showBanner(i18n.t("band_warning", {
+            band: i18n.t("tariff_band_" + band.band.key),
+            mult: band.band.mult,
+            sec: Math.ceil(band.inSec),
+        }), 5000);
+    } else if (!band) {
+        warnedBandKey = null;
     }
     if (STATE.heatwave.active && !heatwaveWasActive) showBanner(i18n.t("heatwave_start"), 5000);
     if (!STATE.heatwave.active && heatwaveWasActive) showBanner(i18n.t("heatwave_end"), 2500);
@@ -164,6 +179,7 @@ function clearWorld() {
     clearBadges();
     renderInspect(null);
     warnedWaveAt = 0;
+    warnedBandKey = null;
     heatwaveWasActive = false;
     brownoutWasActive = false;
     brokenIds = new Set();
@@ -191,6 +207,10 @@ function beginRun() {
 }
 window.startGame = () => {
     beginRun();
+    // Free play runs the day/night meter. The bands average to 1.0, so this
+    // is not a harder game — it is the same bill with a clock attached, and
+    // the only mode long enough for load-shifting to be worth learning.
+    STATE.tariff.cycleOn = true;
     if (shouldOfferTutorial()) showCeremony();
 };
 window.startTutorialGame = () => {

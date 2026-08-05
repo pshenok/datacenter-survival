@@ -84,6 +84,45 @@ export function upcomingWave(elapsed) {
     return null;
 }
 
+// ---- time-of-use meter --------------------------------------------------
+// The day/night band at a given moment. Pure and total: it reads CONFIG and
+// the clock, nothing else, so a player (and the HUD) can work out what any
+// future second will cost without playing it. That predictability IS the
+// mechanic — you cannot plan against a price you cannot see coming.
+export function tariffBandAt(elapsed) {
+    const cfg = CONFIG.tariff;
+    const bands = cfg.bands;
+    if (!Number.isFinite(elapsed) || !cfg.periodSec || bands.length === 0) {
+        return bands[0] || { fromSec: 0, mult: 1, key: null };
+    }
+    // Negative clocks fold forward rather than indexing off the front.
+    const t = ((elapsed % cfg.periodSec) + cfg.periodSec) % cfg.periodSec;
+    let band = bands[0];
+    for (const b of bands) {
+        if (t >= b.fromSec) band = b;
+    }
+    return band;
+}
+
+// The next band boundary as { atSec, band } when it is within warningSec,
+// else null — the same shape and the same "already landed is not upcoming"
+// rule as upcomingWave(), so the HUD treats both announcements alike.
+export function upcomingBand(elapsed) {
+    const cfg = CONFIG.tariff;
+    if (!STATE.tariff.cycleOn || !Number.isFinite(elapsed) || !cfg.periodSec) return null;
+    const t = ((elapsed % cfg.periodSec) + cfg.periodSec) % cfg.periodSec;
+    let nextAt = cfg.periodSec;      // wrapping to band 0 is itself a boundary
+    let next = cfg.bands[0];
+    for (const b of cfg.bands) {
+        if (b.fromSec > t && b.fromSec < nextAt) {
+            nextAt = b.fromSec;
+            next = b;
+        }
+    }
+    const inSec = nextAt - t;
+    return inSec <= cfg.warningSec ? { inSec, band: next } : null;
+}
+
 // A rack only takes assignment if its wire chain reaches a grid-connected
 // source (a building whose parentId is "grid" AND whose chainRole is
 // "source"). This is a topology-only check — deliberately NOT last tick's
@@ -186,9 +225,15 @@ export function tickDemand(dt, elapsed) {
     const billingHours = dt / BILLING_HOUR_SEC;
     const eco = CONFIG.economy;
     const missedKw = Math.max(0, STATE.demandKw - STATE.servedKw);
-    // The peak-tariff window (sim/crisis.js) multiplies the METER only —
-    // this is the single line in the whole simulation that reads it.
-    const tariffMul = STATE.tariff.active ? STATE.tariff.multiplier : 1;
+    // The meter, and nothing but the meter. Two independent facts multiply
+    // here and nowhere else in the simulation: the random peak WINDOW
+    // (sim/crisis.js) and the deterministic day/night CYCLE. Neither touches
+    // capacity, heat or SLA — which is exactly why "run the same room at a
+    // different hour" is the only play either of them offers.
+    const band = tariffBandAt(elapsed);
+    STATE.tariff.cycleMul = STATE.tariff.cycleOn ? band.mult : 1;
+    STATE.tariff.band = STATE.tariff.cycleOn ? band.key : null;
+    const tariffMul = (STATE.tariff.active ? STATE.tariff.multiplier : 1) * STATE.tariff.cycleMul;
     STATE.money += STATE.servedKw * CONFIG.buildings.rack.revenuePerKwhServed * billingHours;
     STATE.money -= STATE.totalDrawKw * eco.powerCostPerKwh * tariffMul * billingHours;
     STATE.money -= missedKw * eco.slaPenaltyPerKwhMissed * billingHours;

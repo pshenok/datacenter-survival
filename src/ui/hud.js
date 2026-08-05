@@ -25,12 +25,34 @@ export function getRunStats() {
 export function tickHud() {
     el("hud-money").textContent = `$${Math.floor(STATE.money)}`;
     el("hud-money").className = `text-lg font-bold ${STATE.money >= 0 ? "text-green-400" : "text-red-400"}`;
-    // Peak-tariff pill: the meter is the only thing this event touches, so
-    // it has to be visible on the money, not in a banner that scrolls away.
+    // Meter pill. The tariff touches nothing but the money, so it has to
+    // live ON the money — not in a banner that scrolls away while the
+    // decision it should be informing is still open.
+    //
+    // One pill, showing the EFFECTIVE multiplier, because that is the number
+    // the player is actually paying: a peak inside the day band costs day x
+    // peak, and printing only "PEAK x2.5" there would understate the bill by
+    // 40%. The label names whichever fact is dominant; the number is always
+    // the truth.
     const tariffEl = el("hud-tariff");
     if (tariffEl) {
-        tariffEl.textContent = i18n.t("tariff_pill", { mult: STATE.tariff.multiplier });
-        tariffEl.classList.toggle("hidden", !STATE.tariff.active);
+        const t = STATE.tariff;
+        const effective = (t.active ? t.multiplier : 1) * (t.cycleOn ? t.cycleMul : 1);
+        const show = t.active || t.cycleOn;
+        if (show) {
+            tariffEl.textContent = t.active
+                ? i18n.t("tariff_pill", { mult: round2(effective) })
+                : i18n.t("tariff_band_pill", {
+                    band: i18n.t("tariff_band_" + t.band),
+                    mult: round2(effective),
+                });
+            // Amber is the alarm colour and belongs to the expensive half
+            // only; a cheap band that shouted would train the player to
+            // ignore the pill exactly when it starts mattering.
+            tariffEl.className = "text-[9px] font-bold uppercase tracking-wide "
+                + (effective > 1 ? "text-amber-300" : "text-emerald-300");
+        }
+        tariffEl.classList.toggle("hidden", !show);
     }
     el("hud-rep").textContent = `${Math.round(STATE.reputation)}%`;
     el("hud-demand").textContent = `${STATE.demandKw.toFixed(1)} kW`;
@@ -185,6 +207,11 @@ export function renderInspect(b) {
 
 function row(k, v) {
     return `<div class="flex justify-between py-0.5"><span class="text-gray-500">${k}</span><span>${v}</span></div>`;
+}
+
+// x1.4 and x0.6 read as prices; x1.4000000000000001 reads as a bug.
+function round2(n) {
+    return Math.round(n * 100) / 100;
 }
 
 // ---- best-run stats (localStorage, guarded like i18n for node) ----------

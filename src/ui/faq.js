@@ -4,7 +4,7 @@
 import { CONFIG } from "../core/config.js";
 import { i18n } from "../i18n.js";
 
-const TABS = ["basics", "buildings", "power", "heat", "cooling", "events", "losses", "controls"];
+const TABS = ["basics", "buildings", "power", "heat", "cooling", "tariff", "events", "losses", "controls"];
 let activeTab = "basics";
 
 function buildingRows() {
@@ -21,6 +21,18 @@ function buildingRows() {
             <span class="text-gray-400 text-right">$${c.cost} · ${cap}${extra}</span>
         </div>
         <p class="text-gray-500 text-[11px] mb-2">${i18n.t("faq_b_" + type)}</p>`;
+    }).join("");
+}
+
+function bandRows() {
+    const cfg = CONFIG.tariff;
+    return cfg.bands.map((b, i) => {
+        const next = cfg.bands[i + 1];
+        const to = next ? next.fromSec : cfg.periodSec;
+        return `<div class="flex justify-between py-1 border-b border-gray-800">
+            <span class="text-white font-bold">${i18n.t("tariff_band_" + b.key)}</span>
+            <span class="text-gray-400">${b.fromSec}–${to}s · <span class="${b.mult > 1 ? "text-amber-300" : "text-emerald-300"}">×${b.mult}</span></span>
+        </div>`;
     }).join("");
 }
 
@@ -43,6 +55,14 @@ function tabContent() {
         case "cooling": return `
             <p>${i18n.t("faq_cool_1")}</p>
             <p class="text-cyan-300">${i18n.t("faq_cool_2")}</p>`;
+        // Generated from CONFIG, like the buildings table: a schedule the
+        // player is told to plan against must not be able to drift from the
+        // one the meter actually charges.
+        case "tariff": return `
+            <p>${i18n.t("faq_tariff_1")}</p>
+            <div class="text-xs my-2">${bandRows()}</div>
+            <p>${i18n.t("faq_tariff_2")}</p>
+            <p class="text-cyan-300">${i18n.t("faq_tariff_3")}</p>`;
         case "events": return `
             <p>${i18n.t("faq_events_1")}</p>
             <p>${i18n.t("faq_events_2")}</p>
