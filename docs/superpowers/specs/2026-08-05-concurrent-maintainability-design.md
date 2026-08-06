@@ -1,7 +1,7 @@
 # Concurrent maintainability — design
 
 **Status:** approved (2026-08-05)
-**Issue:** to be filed
+**Issue:** [#17](https://github.com/pshenok/datacenter-survival/issues/17)
 **Teaches:** Tier III is not "has a generator". It is "any element can be taken
 out of service without dropping load."
 
@@ -101,7 +101,10 @@ An order whose `bySec` passes while still `pending` becomes `missed`, and
 
 - **Fails** if any order reaches `missed`.
 - **Fails** if served load drops below `minServedRatio` of demand on any tick
-  while an order is `active`.
+  while an order is `active`. That ratio is declared on the objective itself
+  in `CONFIG.campaign.levels`, not globally: the tolerable dip depends on the
+  room a level hands you, and a single global floor would either forgive a
+  single-path room or condemn a legitimately thin one.
 - **Done** when every order is `done`.
 
 The served-ratio test only runs while a window is open, so the objective is
