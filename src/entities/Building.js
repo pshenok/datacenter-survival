@@ -54,6 +54,13 @@ export class Building {
         this.breakerHeat = 0;
         this.tripped = false;
 
+        // Planned maintenance (owned by sim/maintenance.js). Out-for-service
+        // gear is dead gear — see isDeadGear() in sim/power.js — but it is
+        // NOT a fault: no breaker heat accrues and the ledger names it as
+        // planned work.
+        this.outForService = false;
+        this.serviceLeftSec = 0;
+
         // Generator (owned by sim/power.js + sim/crisis.js): born with a
         // full tank; standby children list is the transfer switch — those
         // buildings keep their primary feed and fall to this generator only

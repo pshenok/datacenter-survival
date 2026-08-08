@@ -64,6 +64,11 @@ export const STATE = {
         cycleOn: false, cycleMul: 1, band: null,
     },
 
+    // Scheduled work orders (owned by sim/maintenance.js). Empty outside the
+    // levels that declare them, which is what keeps the mechanic invisible
+    // everywhere it is not being taught.
+    maintenance: { orders: [] },
+
     // rolling mini-contract (owned by sim/contracts.js). key === null means
     // no contract yet; done: null while running, "paid" | "failed" once
     // resolved (the resolved contract stays visible until the next draw).
@@ -107,6 +112,7 @@ export function resetState() {
         active: false, multiplier: 1, endsAt: 0, nextAt: null,
         cycleOn: false, cycleMul: 1, band: null,
     };
+    STATE.maintenance = { orders: [] };
     STATE.contract = { id: 0, key: null, progress: 0, target: 0, reward: 0, endsAt: 0, done: null, nextAt: null };
     STATE.campaign = { levelId: null, objectives: [], bonuses: [], endsAt: 0, done: null, reason: null };
     STATE.losses = { tickKw: {}, totalKwh: {}, blame: [] };

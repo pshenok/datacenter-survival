@@ -229,7 +229,12 @@ export function resolvePower(dt) {
             // overload signal the breaker integrates (the carried number
             // never exceeds 100% by construction and would never trip).
             b.demandedKw = sum;
-            if (b.tripped) cap = 0;
+            // Dead gear (tripped OR out for service) carries nothing UP the
+            // chain either: without this, a serviced node still reports its
+            // subtree's raw pull to its parent, under-reporting its own
+            // clippedKw and making the parent split capacity with a phantom
+            // sibling that is not actually drawing anything.
+            if (isDeadGear(b)) cap = 0;
             p = Math.min(cap, sum);
             // Diagnostic only (sim/attribution.js reads it to name WHICH link
             // starved a rack). Nothing in the resolution reads it back.
@@ -441,13 +446,16 @@ export function resolvePower(dt) {
     // ~20 s and a severe one 2 s. Below pickup nothing accrues and the heat
     // bleeds away, so a facility that never overloads can never trip. A
     // tripped link carries nothing until the player resets it — real gear
-    // opens, it does not dim forever.
+    // opens, it does not dim forever. Out-for-service gear (isDeadGear) is
+    // skipped the same as a tripped one, but for the opposite reason: it is
+    // isolated, so no current flows through it and it physically cannot
+    // overheat — a service window must never trip its own breaker.
     const brk = CONFIG.breaker;
     for (const b of STATE.buildings) {
         const role = b.config.chainRole;
         if (role !== "link" && role !== "fanout") continue;
         const cap = Number.isFinite(b.config.capacityKw) ? b.config.capacityKw : 0;
-        if (b.tripped || cap <= 0) continue;
+        if (isDeadGear(b) || cap <= 0) continue;
         const ratio = b.demandedKw / cap;
         if (ratio > brk.pickupRatio) {
             b.breakerHeat += dt * (ratio - 1);

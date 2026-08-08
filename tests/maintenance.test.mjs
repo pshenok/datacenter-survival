@@ -1,0 +1,274 @@
+// Scheduled maintenance — the Tier III mechanic.
+//
+// A work order is a promise the facility makes: this element WILL be out of
+// service for this long, before this deadline. The tests pin the three things
+// that makes true — the window really kills the gear, the deadline really
+// expires, and a room that never declares an order never notices any of it.
+import { describe, it, expect, beforeEach } from "vitest";
+import { CONFIG } from "../src/core/config.js";
+import { STATE, resetState } from "../src/core/state.js";
+import { Building, resetBuildingIds } from "../src/entities/Building.js";
+import { wireBuildings, resolvePower, isDeadGear } from "../src/sim/power.js";
+import { tickDemand, tickEvents } from "../src/sim/demand.js";
+import { tickHeat } from "../src/sim/heat.js";
+import {
+    initMaintenance, tickMaintenance, openServiceWindow,
+    pendingOrderFor, activeOrderCount,
+} from "../src/sim/maintenance.js";
+
+const DT = 0.05;
+
+function place(type, gx, gz) {
+    const b = new Building(type, gx, gz);
+    STATE.buildings.push(b);
+    return b;
+}
+
+// Feed -> transformer -> pdu -> rack, plus a cooling unit so the room is real.
+function room() {
+    STATE.demandFixedKw = 6;
+    const f = place("grid_feed", 2, 5);
+    const x = place("transformer", 5, 5);
+    const p = place("pdu", 8, 5);
+    wireBuildings(f, x);
+    wireBuildings(x, p);
+    const r = place("rack", 12, 5);
+    wireBuildings(p, r);
+    wireBuildings(p, place("crac", 13, 5));
+    return { f, x, p, r };
+}
+
+function run(seconds) {
+    for (let i = 0; i < seconds / DT; i++) {
+        STATE.elapsedGameTime += DT;
+        const t = STATE.elapsedGameTime;
+        tickEvents(DT, t);
+        tickDemand(DT, t);
+        resolvePower(DT);
+        tickHeat(DT);
+        tickMaintenance(DT, t);
+    }
+}
+
+beforeEach(() => {
+    resetState();
+    resetBuildingIds();
+    STATE.heatwave.nextAt = Infinity;
+    STATE.brownout.nextAt = Infinity;
+    STATE.breakdown.nextAt = Infinity;
+    STATE.gridOutage.nextAt = Infinity;
+    STATE.tariff.nextAt = Infinity;
+    STATE.contract.nextAt = Infinity;
+});
+
+describe("a work order is a promise with a deadline", () => {
+    it("resolves declared targets to real buildings", () => {
+        const { p } = room();
+        initMaintenance([{ target: 2, durationSec: 30, bySec: 90 }], STATE.buildings);
+        expect(STATE.maintenance.orders.length).toBe(1);
+        expect(STATE.maintenance.orders[0].buildingId).toBe(p.id);
+        expect(STATE.maintenance.orders[0].state).toBe("pending");
+        expect(pendingOrderFor(p)).not.toBeNull();
+    });
+
+    it("THROWS on a target that resolves to nothing — an order pointing at no gear is an unwinnable level", () => {
+        room();
+        expect(() => initMaintenance([{ target: 99, durationSec: 30, bySec: 90 }], STATE.buildings))
+            .toThrow();
+    });
+
+    it("opening a window kills the gear, and the subtree with it", () => {
+        const { p, r } = room();
+        initMaintenance([{ target: 2, durationSec: 30, bySec: 90 }], STATE.buildings);
+        run(20);
+        expect(r.powered).toBe(true);
+
+        expect(openServiceWindow(p, STATE.elapsedGameTime)).toBe(true);
+        expect(isDeadGear(p)).toBe(true);
+        expect(activeOrderCount()).toBe(1);
+        run(5);
+        expect(r.powered).toBe(false);
+        expect(STATE.servedKw).toBeLessThan(0.01);
+    });
+
+    it("closes itself when the window runs out, and the room comes back", () => {
+        const { p, r } = room();
+        initMaintenance([{ target: 2, durationSec: 10, bySec: 90 }], STATE.buildings);
+        run(5);
+        openServiceWindow(p, STATE.elapsedGameTime);
+        run(11);
+        expect(p.outForService).toBe(false);
+        expect(STATE.maintenance.orders[0].state).toBe("done");
+        expect(activeOrderCount()).toBe(0);
+        run(5);
+        expect(r.powered).toBe(true);
+    });
+
+    it("accrues no breaker heat while out for service — this is not a fault", () => {
+        const { p } = room();
+        initMaintenance([{ target: 2, durationSec: 20, bySec: 90 }], STATE.buildings);
+        run(5);
+        openServiceWindow(p, STATE.elapsedGameTime);
+        run(10);
+        expect(p.breakerHeat).toBe(0);
+        expect(p.tripped).toBe(false);
+    });
+
+    it("misses an order whose deadline passes while it is still pending — and missed is terminal", () => {
+        const { p } = room();
+        initMaintenance([{ target: 2, durationSec: 10, bySec: 30 }], STATE.buildings);
+        run(35);
+        expect(STATE.maintenance.orders[0].state).toBe("missed");
+        expect(openServiceWindow(p, STATE.elapsedGameTime)).toBe(false);
+        run(10);
+        expect(STATE.maintenance.orders[0].state).toBe("missed");
+        expect(p.outForService).toBe(false);
+    });
+
+    it("does not miss an order that was opened before the deadline but runs past it", () => {
+        const { p } = room();
+        initMaintenance([{ target: 2, durationSec: 20, bySec: 30 }], STATE.buildings);
+        run(25);
+        openServiceWindow(p, STATE.elapsedGameTime);
+        run(25);
+        expect(STATE.maintenance.orders[0].state).toBe("done");
+    });
+
+    it("refuses to open a second window on the same order", () => {
+        const { p } = room();
+        initMaintenance([{ target: 2, durationSec: 20, bySec: 90 }], STATE.buildings);
+        openServiceWindow(p, STATE.elapsedGameTime);
+        expect(openServiceWindow(p, STATE.elapsedGameTime)).toBe(false);
+        expect(activeOrderCount()).toBe(1);
+    });
+
+    it("refuses gear with no order at all", () => {
+        const { x } = room();
+        initMaintenance([{ target: 2, durationSec: 20, bySec: 90 }], STATE.buildings);
+        expect(openServiceWindow(x, STATE.elapsedGameTime)).toBe(false);
+        expect(x.outForService).toBe(false);
+    });
+});
+
+describe("the pure-module contract", () => {
+    it("no-ops on dt <= 0, NaN and Infinity", () => {
+        const { p } = room();
+        initMaintenance([{ target: 2, durationSec: 10, bySec: 90 }], STATE.buildings);
+        openServiceWindow(p, 0);
+        const left = p.serviceLeftSec;
+        for (const bad of [0, -1, NaN, Infinity, -Infinity]) {
+            tickMaintenance(bad, 5);
+            expect(p.serviceLeftSec).toBe(left);
+        }
+    });
+
+    it("resetState severs every order", () => {
+        room();
+        initMaintenance([{ target: 2, durationSec: 10, bySec: 90 }], STATE.buildings);
+        expect(STATE.maintenance.orders.length).toBe(1);
+        resetState();
+        expect(STATE.maintenance).toEqual({ orders: [] });
+    });
+
+    it("is INERT where no order is declared — bit-identical room", () => {
+        const snap = () => ({
+            served: STATE.servedKw, it: STATE.itDrawKw, total: STATE.totalDrawKw,
+            money: STATE.money, rep: STATE.reputation, heat: Array.from(STATE.heatField),
+        });
+        room();
+        run(60);
+        const withModule = snap();
+
+        resetState();
+        resetBuildingIds();
+        STATE.heatwave.nextAt = Infinity;
+        STATE.brownout.nextAt = Infinity;
+        STATE.breakdown.nextAt = Infinity;
+        STATE.gridOutage.nextAt = Infinity;
+        STATE.tariff.nextAt = Infinity;
+        STATE.contract.nextAt = Infinity;
+        room();
+        initMaintenance([], STATE.buildings);
+        run(60);
+
+        expect(snap()).toEqual(withModule);
+    });
+});
+
+// Two facts from the Task 1 review that pullOf() and the breaker block have
+// to respect, not just deliver() and chainAlive: dead gear (tripped OR
+// serviced — see isDeadGear) carries nothing UP the chain either, and it
+// physically cannot overheat, because nothing is flowing through it. Both
+// scenarios below load the serviced node with a CRAC, deliberately: a CRAC
+// bills off its own duty cycle, never off assignLoad's chainAlive gate, so
+// its demand survives being cut off exactly the way a naive fix would not.
+describe("dead gear carries nothing — not downstream, and not to its own breaker", () => {
+    it("a serviced node reports zero pull upstream, so a live sibling on the same bus keeps its whole share", () => {
+        const feed = place("grid_feed", 2, 5);
+        const xf = place("transformer", 5, 5);
+        const serviced = place("pdu", 8, 3);
+        const live = place("pdu", 8, 7);
+        wireBuildings(feed, xf);
+        wireBuildings(xf, serviced);
+        wireBuildings(xf, live);
+
+        // Five CRACs at full duty ask the serviced PDU's subtree for 15 kW —
+        // well inside its own 16 kW rating, so nothing here is locally
+        // clipped; whatever the parent sees is exactly what a "dead gear
+        // still reports its rated capacity" bug would carry upstream.
+        for (let i = 0; i < 5; i++) {
+            const c = place("crac", 11 + i, 3);
+            wireBuildings(serviced, c);
+            c.duty = 1;
+        }
+        const racks = [];
+        for (let i = 0; i < 3; i++) {
+            const r = place("rack", 11 + i, 7);
+            r.assignedKw = 6;
+            wireBuildings(live, r);
+            racks.push(r);
+        }
+
+        initMaintenance([{ target: 2, durationSec: 30, bySec: 90 }], STATE.buildings);
+        expect(openServiceWindow(serviced, 0)).toBe(true);
+
+        resolvePower(DT);
+
+        // live's own 16 kW rating is the only real constraint on it — the
+        // transformer (30 kW) has plenty of headroom once the serviced PDU
+        // correctly reports zero, so live must not lose a single watt to a
+        // sibling that is not actually drawing anything.
+        expect(live.actualKw).toBeCloseTo(16, 5);
+        // serviced asked its own subtree for 15 kW and delivered none of it.
+        // The ledger has to name the whole 15 as clipped here — a clean zero
+        // would hide the fact that this PDU is why the CRACs went dark.
+        expect(serviced.clippedKw).toBeCloseTo(15, 5);
+    });
+
+    it("a serviced node accrues no breaker heat, however long the demand behind it stays overloaded", () => {
+        const feed = place("grid_feed", 2, 5);
+        const xf = place("transformer", 5, 5);
+        const pdu = place("pdu", 8, 5);
+        wireBuildings(feed, xf);
+        wireBuildings(xf, pdu);
+
+        // Eight CRACs at full duty ask this 16 kW PDU for 24 kW — 150% of
+        // rating. Live, that trips in about (2.0 / 0.5) = 4 seconds; the
+        // window below runs for ten, five times CONFIG.breaker.tripSeconds.
+        for (let i = 0; i < 8; i++) {
+            const c = place("crac", 11 + i, 5);
+            wireBuildings(pdu, c);
+            c.duty = 1;
+        }
+
+        initMaintenance([{ target: 2, durationSec: 9999, bySec: 9999 }], STATE.buildings);
+        expect(openServiceWindow(pdu, 0)).toBe(true);
+
+        const ticks = Math.round((CONFIG.breaker.tripSeconds * 5) / DT);
+        for (let i = 0; i < ticks; i++) {
+            resolvePower(DT);
+        }
+        expect(pdu.breakerHeat).toBe(0);
+        expect(pdu.tripped).toBe(false);
+    });
+});
