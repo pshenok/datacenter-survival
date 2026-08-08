@@ -375,20 +375,21 @@ export function resolvePower(dt) {
 
             if (outLive) {
                 // The load is served first; the charger lives on whatever is
-                // left of the grant. A UPS never charges off another UPS's
-                // battery — that pays the round-trip loss twice to move
-                // energy sideways.
+                // left of the grant, battery-sourced or not. Refusing it
+                // battery power sounds tidier and is not: a UPS one level up
+                // has already committed that charge against this node's
+                // whole pull, charger included, so declining it here deletes
+                // the energy instead of delivering it. Taking it keeps the
+                // books exact and charges the player honestly for it —
+                // stacking UPSes and leaving the toggle on cycles the same
+                // energy through two batteries at roundTripEff each.
                 const served = Math.min(outKw, subtreePull);
                 let battOut = Math.min(served, outBattKw);
-                const gridLeft = Math.max(0, outKw - served - (outBattKw - battOut));
+                const spare = Math.max(0, outKw - served);
+                const battSpare = Math.max(0, outBattKw - battOut);
                 let chargeKw = 0;
 
-                // isDeadGear is re-checked here rather than left to the sweep
-                // below: that sweep zeroes what the UPS DELIVERS, but by then
-                // the battery has already been spent and the meter already
-                // credited. A UPS behind its own open breaker is not shaving
-                // — it is isolated, and energy it "spends" reaches nothing.
-                if (STATE.peakShave.on && b.bufferLeft > 0 && served > battOut && !isDeadGear(b)) {
+                if (STATE.peakShave.on && b.bufferLeft > 0 && served > battOut) {
                     // PEAK SHAVING. Displace the GRID-sourced part of what
                     // this UPS is already delivering — same kW to the racks,
                     // bought from the battery instead of the meter — and
@@ -407,7 +408,7 @@ export function resolvePower(dt) {
                     b.bufferOwedKws += fromBattery * dt;
                     battOut += fromBattery;
                     b.upsMode = fromBattery > 0 ? "shaving" : "idle";
-                } else if ((b.rechargeReqKw || 0) > 0 && gridLeft > 0 && b.bufferLeft < max) {
+                } else if ((b.rechargeReqKw || 0) > 0 && spare > 0 && b.bufferLeft < max) {
                     // RECHARGE. The charger draws what its rating and its
                     // upstream will allow, and puts back exactly the energy
                     // that left (bufferOwedKws) — never a nameplate refill.
@@ -416,13 +417,19 @@ export function resolvePower(dt) {
                     const deficitSec = max - b.bufferLeft;
                     const owed = b.bufferOwedKws > 0 ? b.bufferOwedKws : deficitSec * cap;
                     if (owed > 0) {
-                        const draw = Math.min(b.rechargeReqKw, gridLeft);
+                        const draw = Math.min(b.rechargeReqKw, spare);
                         const restored = Math.min(owed, draw * eff * dt);
                         chargeKw = restored / (eff * dt);
                         b.bufferLeft = Math.min(max, b.bufferLeft + deficitSec * (restored / owed));
                         b.bufferOwedKws = Math.max(0, owed - restored);
                         if (b.bufferOwedKws === 0) b.bufferLeft = max;
                         rechargeSum += chargeKw;
+                        // The charger is a load like any other, so the kW it
+                        // took off an upstream battery is banked here, where
+                        // it was consumed — the same rule the racks follow.
+                        if (battSpare > 0 && chargeKw > 0) {
+                            batterySum += Math.min(chargeKw, battSpare * (chargeKw / spare));
+                        }
                         b.upsMode = "charging";
                     } else {
                         b.upsMode = "idle";

@@ -393,12 +393,50 @@ describe("batteryKw is credited ONCE per delivered kW, not once per UPS", () => 
         expect(upsB.bufferLeft).toBe(U.bufferSec);
     });
 
+    it("a shaving UPS above a CHARGING one loses nothing in the gap between them", () => {
+        // upsA is full and spending; upsB is flat and buying. upsA commits
+        // its battery against upsB's whole pull — racks AND charger — so if
+        // the charger then refuses battery-sourced power, that energy leaves
+        // the battery and arrives nowhere. Measured before this was fixed:
+        // 18 kW.s out of upsA, 8 kW.s to the racks, 10 kW.s deleted.
+        const feed = place("grid_feed", 2, 5);
+        const upsA = place("ups", 5, 5);
+        const upsB = place("ups", 8, 5);
+        const pdu = place("pdu", 11, 5);
+        wireBuildings(feed, upsA);
+        wireBuildings(upsA, upsB);
+        wireBuildings(upsB, pdu);
+        for (let i = 0; i < 2; i++) {
+            const r = place("rack", 14, 5 + i);
+            r.assignedKw = 4;
+            wireBuildings(pdu, r);
+        }
+        upsB.bufferLeft = 0;
+        upsB.bufferOwedKws = FULL_KWS;
+        STATE.peakShave.on = true;
+        resolvePower(1);
+
+        expect(upsB.upsMode).toBe("charging");
+        const spentKws = (U.bufferSec - upsA.bufferLeft) * U.capacityKw;
+        const deliveredKws = STATE.batteryKw * 1;
+        expect(deliveredKws).toBeCloseTo(spentKws, 9);   // nothing evaporates
+        // 8 kW of racks plus a 10 kW charger, every watt off upsA's battery.
+        expect(STATE.totalDrawKw).toBeCloseTo(8 + CHARGER_KW, 9);
+        expect(STATE.batteryKw).toBeCloseTo(8 + CHARGER_KW, 9);
+        expect(STATE.totalDrawKw - STATE.batteryKw).toBeCloseTo(0, 9);
+        // And it is a bad idea, not free: the same energy is now paying the
+        // round-trip loss twice over on its way into the second battery.
+        expect(FULL_KWS - upsB.bufferOwedKws).toBeLessThan(spentKws);
+    });
+
     it("a TRIPPED UPS credits nothing and spends nothing — it is isolated, not shaving", () => {
-        // The kW is banked where it is consumed, so gear that delivers
-        // nothing can never bank anything. The dead-gear sweep runs AFTER
-        // the UPS clause (so a tripped UPS cannot self-grant either), which
-        // means the clause has to decline on its own or the battery is gone
-        // and the meter credited before the sweep ever zeroes the delivery.
+        // Two independent things have to hold for this, and it is worth
+        // knowing which one carries it: the PULL phase zeroes dead gear's
+        // capacity, so a tripped UPS has nothing to serve and the shave
+        // branch never opens — and the credit is banked at the loads, which
+        // received nothing. The dead-gear sweep in deliver() is too late to
+        // help; it zeroes the DELIVERY, long after a battery could have been
+        // spent and a meter credited.
         const { ups, pdu } = chain();
         const rack = place("rack");
         rack.assignedKw = 4;
