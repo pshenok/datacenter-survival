@@ -404,11 +404,20 @@ describe("L13 night_shift — Tier III is about being serviceable", () => {
         // opens clean — the failure is not "can't do the work", it is
         // "doing the work is safe, the ROOM behind it was not".
         expect(openServiceWindow(pduA)).toBe(true);
+        const openedAt = STATE.elapsedGameTime;
         runShift();
         expect(STATE.campaign.done).toBe("failed");
         // Not a near miss: 21 kW on a 16 kW bus opens it and the hall is dark.
         expect(pduB.tripped).toBe(true);
         expect(STATE.servedKw).toBe(0);
+        // The headline claim is that the trip lands almost immediately — not
+        // merely that the run eventually fails via order 2's own deadline
+        // (bySec 170), which it would do anyway even with a neutered
+        // served-ratio check. Pin the mechanism: the verdict lands within
+        // about a second of opening the window, and order 2 never got the
+        // chance to miss its own deadline.
+        expect(STATE.elapsedGameTime - openedAt).toBeLessThan(1);
+        expect(STATE.maintenance.orders[1].state).toBe("pending");
     });
 
     it("WIN: a third bus makes any single window survivable", () => {
