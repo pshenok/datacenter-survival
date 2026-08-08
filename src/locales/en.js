@@ -228,6 +228,7 @@ export const EN_TRANSLATIONS = {
     "loss_dead_chain": "NO POWER",
     "loss_battery_empty": "BATTERY FLAT",
     "loss_tank_dry": "TANK DRY",
+    "loss_maintenance": "PLANNED WORK",
     "loss_no_capacity": "NOT ENOUGH RACKS",
     "ledger_title": "Where the ${total} went",
     "faq_tab_losses": "Diagnosis",

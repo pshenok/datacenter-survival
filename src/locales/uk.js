@@ -229,6 +229,7 @@ export const UK_TRANSLATIONS = {
     "loss_dead_chain": "НЕМАЄ ЖИВЛЕННЯ",
     "loss_battery_empty": "БАТАРЕЯ СІЛА",
     "loss_tank_dry": "БАК СУХИЙ",
+    "loss_maintenance": "ПЛАНОВІ РОБОТИ",
     "loss_no_capacity": "ЗАМАЛО СТІЙОК",
     "ledger_title": "Куди пішли ${total}",
     "faq_tab_losses": "Діагностика",

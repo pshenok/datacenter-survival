@@ -59,6 +59,12 @@ function powerCause(rack, byId) {
     let hops = 0;
     let clipped = null;
     while (node && hops++ <= maxHops) {
+        // Checked before the breaker: gear can only be one of the two, but
+        // naming a scheduled outage "breaker tripped" would be a lie in the
+        // one place whose whole job is telling the player where the money went.
+        if (node.outForService) {
+            return { cause: "maintenance", id: node.id };
+        }
         if (node.tripped) {
             return { cause: "breaker_tripped", id: node.id };
         }

@@ -272,3 +272,39 @@ describe("dead gear carries nothing — not downstream, and not to its own break
         expect(pdu.tripped).toBe(false);
     });
 });
+
+describe("the ledger tells the truth about why the room went dark", () => {
+    it("names planned work as planned work, not as a breaker trip", async () => {
+        const { p, r } = room();
+        initMaintenance([{ target: 2, durationSec: 20, bySec: 90 }], STATE.buildings);
+        run(10);
+        openServiceWindow(p, STATE.elapsedGameTime);
+        run(5);
+
+        expect(r.powered).toBe(false);
+        expect(STATE.losses.tickKw.maintenance).toBeGreaterThan(0);
+        expect(STATE.losses.tickKw.breaker_tripped || 0).toBe(0);
+        expect(STATE.losses.tickKw.dead_chain || 0).toBe(0);
+        const blamed = STATE.buildings.find((b) => b.id === STATE.losses.blame[0].buildingId);
+        expect(blamed.id).toBe(p.id);
+    });
+
+    it("still sums exactly — the conservation identity survives a new bucket", () => {
+        const { p } = room();
+        initMaintenance([{ target: 2, durationSec: 20, bySec: 90 }], STATE.buildings);
+        run(10);
+        openServiceWindow(p, STATE.elapsedGameTime);
+        for (let i = 0; i < 300; i++) {
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            tickEvents(DT, t);
+            tickDemand(DT, t);
+            resolvePower(DT);
+            tickHeat(DT);
+            tickMaintenance(DT, t);
+            const missed = Math.max(0, STATE.demandKw - STATE.servedKw);
+            const summed = Object.values(STATE.losses.tickKw).reduce((a, b) => a + b, 0);
+            expect(summed).toBeCloseTo(missed, 9);
+        }
+    });
+});
