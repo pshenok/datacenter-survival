@@ -5,3 +5,6 @@ coverage/
 
 # SDD scratch — plan workspaces, never committed
 .superpowers/
+
+# Per-task scratch reports — not shipped documentation
+.peak-shaving-report.md

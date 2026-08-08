@@ -216,6 +216,7 @@ function beginRun() {
     setTool("select");
     refreshAffordability();
     syncPlayPauseUi();
+    syncPeakShaveUi(); // resetState() (inside clearWorld) severs the toggle
 }
 window.startGame = () => {
     beginRun();
@@ -330,6 +331,19 @@ window.togglePause = () => {
     syncPlayPauseUi();
 };
 window.toggleThermalOverlay = () => { notifyOverlayToggled(); return toggleThermalOverlay(); };
+
+// ---- peak shaving toggle --------------------------------------------------
+// A player choice, not a diagnostic: owned here (the composition root), the
+// same place STATE.tariff.cycleOn and STATE.timeScale get written — src/ui/*
+// and src/input/* only ever read STATE, per the architecture boundary.
+function syncPeakShaveUi() {
+    const btn = document.getElementById("btn-peakshave");
+    if (btn) btn.classList.toggle("text-emerald-300", STATE.peakShave.on);
+}
+window.togglePeakShave = () => {
+    STATE.peakShave.on = !STATE.peakShave.on;
+    syncPeakShaveUi();
+};
 window.setTool = setTool;
 window.showHelp = openFaq;
 window.closeHelp = closeFaq;

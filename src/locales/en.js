@@ -60,6 +60,9 @@ export const EN_TRANSLATIONS = {
     "insp_temp": "Temp",
     "insp_load": "Load",
     "insp_buffer": "UPS buffer",
+    "insp_ups_shaving": "DISCHARGING — peak shaving",
+    "insp_ups_charging": "RECHARGING",
+    "insp_ups_bridging": "BRIDGING — upstream is dark",
     "insp_duty": "Cooling duty",
     "insp_unpowered": "NOT POWERED",
     "insp_broken": "BROKEN — click to repair (${cost})",
@@ -187,6 +190,10 @@ export const EN_TRANSLATIONS = {
     "btn_to_menu": "Menu",
     "outage_start": "CITY GRID DOWN — batteries only. This is what the UPS is for",
     "outage_end": "Grid restored — buffers recharging",
+
+    "peakshave_tip": "Peak shaving: spend the UPS buffer instead of the grid",
+    "peakshave_active": "SHAVING −{kw} kW · saving ${rate}/hr",
+    "peakshave_armed": "PEAK SHAVE ARMED — buffer ready, nothing to spend yet",
 
     "tariff_pill": "PEAK ×{mult}",
     "tariff_start": "PEAK TARIFF ×{mult} — the meter, not the machinery. Efficiency is the only defence now",

@@ -241,7 +241,14 @@ export function tickDemand(dt, elapsed) {
     STATE.tariff.band = STATE.tariff.cycleOn ? band.key : null;
     const tariffMul = (STATE.tariff.active ? STATE.tariff.multiplier : 1) * STATE.tariff.cycleMul;
     STATE.money += STATE.servedKw * CONFIG.buildings.rack.revenuePerKwhServed * billingHours;
-    STATE.money -= STATE.totalDrawKw * eco.powerCostPerKwh * tariffMul * billingHours;
+    // PEAK SHAVING (sim/power.js, STATE.peakShave): kW served from a UPS
+    // buffer this tick already left the grid — battery-sourced draw does
+    // not hit the meter, which is the entire point of the mechanic.
+    // totalDrawKw itself is untouched (still every watt the facility drew,
+    // whatever it came from — PUE's numerator stays honest); only the BILL
+    // subtracts it, here and nowhere else.
+    const billedDrawKw = Math.max(0, STATE.totalDrawKw - STATE.batteryKw);
+    STATE.money -= billedDrawKw * eco.powerCostPerKwh * tariffMul * billingHours;
     STATE.money -= missedKw * eco.slaPenaltyPerKwhMissed * billingHours;
 
     // Reputation drifts toward the SLA compliance ratio mapped to 0..100.

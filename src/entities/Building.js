@@ -39,6 +39,13 @@ export class Building {
         // UPS buffer seconds remaining (owned by sim/power.js).
         this.bufferLeft = type === "ups" ? this.config.bufferSec : 0;
 
+        // UPS status this tick (owned by sim/power.js): "idle" | "charging"
+        // | "shaving" (peak shaving, draining into the meter's expensive
+        // window) | "bridging" (existing outage self-grant). Read by the
+        // inspect panel so it never has to re-derive what the buffer is
+        // doing from bufferLeft's trend.
+        this.upsMode = "idle";
+
         // How much demand this link had to refuse this tick because it hit
         // its kW cap. Diagnostic only — written by sim/power.js, read by
         // sim/attribution.js to name the link that starved a rack.

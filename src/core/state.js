@@ -29,7 +29,13 @@ export const STATE = {
     demandFixedKw: null,
     // power accounting (owned by sim/power.js)
     itDrawKw: 0,            // racks only — the PUE denominator
-    totalDrawKw: 0,         // racks + cooling — what the power bill charges
+    totalDrawKw: 0,         // racks + cooling + UPS recharge — total facility
+                             // draw; PUE's numerator, UNCHANGED in meaning by
+                             // peak shaving (see batteryKw below)
+    // kW of totalDrawKw sourced from a UPS buffer THIS tick (peak shaving),
+    // not from the grid. sim/demand.js bills (totalDrawKw - batteryKw) —
+    // the meter, not the facility-draw/PUE number, is what shaving touches.
+    batteryKw: 0,
 
     // economy & standing
     money: CONFIG.economy.startMoney,
@@ -84,6 +90,13 @@ export const STATE = {
     // badges. Diagnostic only — nothing in the simulation reads it back.
     losses: { tickKw: {}, totalKwh: {}, blame: [] },
 
+    // Peak shaving (owned by sim/power.js reading it; written only by the
+    // player, via game.js's togglePeakShave — see src/ui/* boundary rule).
+    // While on, a UPS with a live upstream and a charged buffer serves its
+    // subtree from the buffer instead of the grid. Off by default: the
+    // mechanic must be invisible until chosen, same as STATE.tariff.cycleOn.
+    peakShave: { on: false },
+
     // meta
     gameOver: null,         // null | "bankrupt" | "reputation"
     sound: null,
@@ -102,6 +115,7 @@ export function resetState() {
     STATE.demandFixedKw = null;
     STATE.itDrawKw = 0;
     STATE.totalDrawKw = 0;
+    STATE.batteryKw = 0;
     STATE.money = CONFIG.economy.startMoney;
     STATE.reputation = CONFIG.sla.startReputation;
     STATE.heatwave = { active: false, endsAt: 0, nextAt: CONFIG.events.heatwave.firstAtSec };
@@ -116,6 +130,7 @@ export function resetState() {
     STATE.contract = { id: 0, key: null, progress: 0, target: 0, reward: 0, endsAt: 0, done: null, nextAt: null };
     STATE.campaign = { levelId: null, objectives: [], bonuses: [], endsAt: 0, done: null, reason: null };
     STATE.losses = { tickKw: {}, totalKwh: {}, blame: [] };
+    STATE.peakShave = { on: false };
     STATE.gameOver = null;
 }
 

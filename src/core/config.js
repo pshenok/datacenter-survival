@@ -33,6 +33,29 @@ export const CONFIG = {
             // Seconds of full-subtree draw it can carry when its source goes
             // dark (a blip, not a blackout — generators are post-MVP).
             bufferSec: 8,
+            // ---- Peak shaving (STATE.peakShave) --------------------------
+            // Recharging is NOT free. A real battery gives back less than
+            // you put in — some of the draw becomes heat in the cells and
+            // the charger, not stored charge — so putting a second of
+            // buffer back costs more than that second is worth delivered.
+            // rechargeKw is the draw while topping off, billed exactly like
+            // any load's draw (sim/power.js adds it into totalDrawKw, the
+            // same accumulator a CRAC's idle draw feeds). roundTripEff is
+            // the fraction of that draw that actually lands in the buffer;
+            // the rest is the loss. Chosen so the buffer refills at EXACTLY
+            // the pace it always did — dt/4, a quarter of capacityKw's
+            // worth of buffer-seconds per second — grossed up by the loss:
+            // rechargeKw * roundTripEff / capacityKw = 9/36 = 0.25. So the
+            // existing recharge-rate behaviour (and the test that pins it)
+            // is unchanged; only the bill and the buffer's own math change.
+            //
+            // Without a real cost here, peak shaving is free money: charge
+            // low, discharge high, nothing given back either way — exactly
+            // what this project's mechanic-proposal form rejects ("if the
+            // answer to 'when would you NOT want this?' is 'never', the
+            // mechanic is not ready").
+            rechargeKw: 10,
+            roundTripEff: 0.9,
         },
         pdu: {
             name: "PDU",

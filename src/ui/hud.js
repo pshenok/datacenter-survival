@@ -55,6 +55,28 @@ export function tickHud() {
         }
         tariffEl.classList.toggle("hidden", !show);
     }
+    // Peak-shave pill: the toggle alone tells a player nothing they can
+    // learn from — the whole lesson is WHAT it is saving, right now, in the
+    // same units the tariff pill already speaks (kW and $), or the mechanic
+    // stays invisible even while it is running.
+    const psEl = el("hud-peakshave");
+    if (psEl) {
+        const ps = STATE.peakShave;
+        if (ps.on && STATE.batteryKw > 0.05) {
+            const t = STATE.tariff;
+            const mult = (t.active ? t.multiplier : 1) * (t.cycleOn ? t.cycleMul : 1);
+            const rate = STATE.batteryKw * CONFIG.economy.powerCostPerKwh * mult;
+            psEl.textContent = i18n.t("peakshave_active", { kw: STATE.batteryKw.toFixed(1), rate: rate.toFixed(2) });
+            psEl.className = "text-[9px] font-bold uppercase tracking-wide text-emerald-300";
+            psEl.classList.remove("hidden");
+        } else if (ps.on) {
+            psEl.textContent = i18n.t("peakshave_armed");
+            psEl.className = "text-[9px] font-bold uppercase tracking-wide text-cyan-300";
+            psEl.classList.remove("hidden");
+        } else {
+            psEl.classList.add("hidden");
+        }
+    }
     el("hud-rep").textContent = `${Math.round(STATE.reputation)}%`;
     el("hud-demand").textContent = `${STATE.demandKw.toFixed(1)} kW`;
     el("hud-served").textContent = `${STATE.servedKw.toFixed(1)} kW`;
@@ -217,6 +239,17 @@ export function renderInspect(b) {
         }
     } else if (b.type === "ups") {
         rows.push(row(i18n.t("insp_buffer"), `${b.bufferLeft.toFixed(1)}s / ${b.config.bufferSec}s`));
+        // upsMode (owned by sim/power.js) is a first-class fact, not a
+        // guess from bufferLeft's trend — "shaving" and "charging" look
+        // identical from a single number (both move), and only the mode
+        // says which direction is a choice and which is the bill.
+        if (b.upsMode === "shaving") {
+            rows.push(`<div class="text-emerald-300 font-bold mb-1">${i18n.t("insp_ups_shaving")}</div>`);
+        } else if (b.upsMode === "charging") {
+            rows.push(`<div class="text-cyan-300 font-bold mb-1">${i18n.t("insp_ups_charging")}</div>`);
+        } else if (b.upsMode === "bridging") {
+            rows.push(`<div class="text-amber-300 font-bold mb-1">${i18n.t("insp_ups_bridging")}</div>`);
+        }
     } else if (b.type === "generator") {
         rows.push(row(i18n.t("insp_fuel"), `${b.fuelLiters.toFixed(0)} / ${b.config.tankLiters} L`));
         rows.push(row(i18n.t("insp_draw"), `${b.actualKw.toFixed(1)} / ${b.config.capacityKw} kW`));

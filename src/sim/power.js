@@ -2,12 +2,20 @@
 //
 // STATE fields owned by this module:
 //   STATE.itDrawKw    — sum of rack actualKw this tick (the PUE denominator)
-//   STATE.totalDrawKw — rack + CRAC actualKw this tick (the power bill)
+//   STATE.totalDrawKw — rack + CRAC + UPS-recharge actualKw this tick (total
+//                       facility draw — PUE's numerator, and what would be
+//                       billed if nothing were battery-sourced)
+//   STATE.batteryKw   — of totalDrawKw, how much was served from a UPS
+//                       buffer this tick (peak shaving) rather than the
+//                       grid. sim/demand.js bills (totalDrawKw - batteryKw);
+//                       totalDrawKw/PUE do not change meaning — see below.
 // Building fields owned by this module (declared in entities/Building.js):
 //   parentId, childIds — power topology, via wireBuildings()/unwire()
 //   actualKw, powered  — per-tick resolution results (links carry, loads draw)
 //   bufferLeft         — UPS buffer seconds remaining
-// Inputs read, never written: assignedKw (sim/demand.js), duty (sim/heat.js).
+//   upsMode            — "idle" | "charging" | "shaving" | "bridging"
+// Inputs read, never written: assignedKw (sim/demand.js), duty (sim/heat.js),
+// STATE.peakShave.on (the player's toggle; owned by game.js).
 //
 // Model per tick (dt in seconds, already timeScale-scaled by the caller;
 // strict no-op when dt === 0 or dt is not a finite positive number):
@@ -24,8 +32,15 @@
 //     engage (degraded-not-dead; see the sim/crisis.js design decision).
 //   - UPS: when its path to a root is broken or dead, it serves its subtree
 //     from bufferLeft (draining dt per tick while carrying draw > 0; at 0
-//     the subtree goes dark) and recharges at 1/4 rate while the path is
-//     live and the buffer is below max.
+//     the subtree goes dark) — the existing outage bridge, untouched by any
+//     of the below. Otherwise, while the path is live: PEAK SHAVING
+//     (STATE.peakShave.on, a player toggle, off by default) drains the
+//     buffer into the subtree instead of drawing from the grid, whenever
+//     there is charge to spend — the player's own choice to spend stored
+//     energy rather than buy it at whatever the meter costs right now. When
+//     not shaving (or the buffer is empty), it recharges at 1/4 rate while
+//     below max — same rate as always, but no longer free: see
+//     CONFIG.buildings.ups for the round-trip-loss accounting.
 //   - a load is powered when it sits on a live chain and either draws power
 //     or requested none (an idle rack on a live chain is powered).
 //
@@ -189,6 +204,12 @@ export function resolvePower(dt) {
         b.clippedKw = 0;
     }
 
+    // Peak shaving (batterySum) and UPS recharge draw (rechargeSum), summed
+    // across every UPS as deliver() visits it. See the header and
+    // CONFIG.buildings.ups for what each becomes at the bottom of this tick.
+    let batterySum = 0;
+    let rechargeSum = 0;
+
     // 1) Sanitized load requests.
     const requests = new Map();
     for (const b of STATE.buildings) {
@@ -272,9 +293,44 @@ export function resolvePower(dt) {
 
         if (b.type === "ups") {
             const max = b.config.bufferSec || 0;
-            if (outLive) {
+            // PEAK SHAVING takes priority over recharging: the player has
+            // asked to spend stored energy right now even though the grid
+            // could serve this subtree normally (outLive is true — this is
+            // NOT the outage bridge below, which only ever sees outLive
+            // false). Bypasses grantKw entirely, same as the outage
+            // self-grant does, and drains at the same 1 sec-of-buffer per
+            // sec-of-wall-time rate as that path.
+            if (STATE.peakShave.on && outLive && b.bufferLeft > 0) {
+                outKw = pull;
+                if (pull > 0) {
+                    b.bufferLeft = Math.max(0, b.bufferLeft - dt);
+                }
+                batterySum += outKw;
+                b.upsMode = pull > 0 ? "shaving" : "idle";
+            } else if (outLive) {
                 if (b.bufferLeft < max) {
-                    b.bufferLeft = Math.min(max, b.bufferLeft + dt / 4);
+                    // Draw rechargeKw for dt seconds; round-trip loss means
+                    // only roundTripEff of that ENERGY lands in the buffer.
+                    // A buffer-second is defined as "one second of
+                    // capacityKw draw" (bufferSec's own definition), so
+                    // dividing stored energy by capacityKw converts it into
+                    // buffer-seconds. With the shipped numbers this comes to
+                    // dt/4 — the same rate recharging always ran at — because
+                    // rechargeKw was chosen as capacityKw/4 grossed up by the
+                    // loss (rechargeKw * roundTripEff / capacityKw = 0.25;
+                    // see CONFIG.buildings.ups). Only the billing is new.
+                    const eff = b.config.roundTripEff > 0 ? b.config.roundTripEff : 1;
+                    const rate = b.config.rechargeKw || 0;
+                    const wouldAdd = (rate * eff * dt) / b.config.capacityKw;
+                    const added = Math.max(0, Math.min(max - b.bufferLeft, wouldAdd));
+                    b.bufferLeft += added;
+                    // Bill exactly the grid draw that produced `added`,
+                    // tapered on the last partial tick that tops the buffer
+                    // off — nothing is billed that didn't charge anything.
+                    if (wouldAdd > 0) rechargeSum += rate * (added / wouldAdd);
+                    b.upsMode = "charging";
+                } else {
+                    b.upsMode = "idle";
                 }
             } else if (b.bufferLeft > 0) {
                 outLive = true;
@@ -282,6 +338,9 @@ export function resolvePower(dt) {
                 if (pull > 0) {
                     b.bufferLeft = Math.max(0, b.bufferLeft - dt);
                 }
+                b.upsMode = "bridging";
+            } else {
+                b.upsMode = "idle";
             }
         }
 
@@ -493,5 +552,11 @@ export function resolvePower(dt) {
         else if (b.config.chainRole === "load") coolKw += b.actualKw;
     }
     STATE.itDrawKw = itKw;
-    STATE.totalDrawKw = itKw + coolKw;
+    // Total facility draw still means what it always meant — racks, cooling,
+    // and now UPS recharge draw, billed like any other load. PUE (computed
+    // from this in src/ui/hud.js) legitimately rises while a UPS recharges:
+    // that overhead is real, same as a CRAC's idle draw.
+    STATE.totalDrawKw = itKw + coolKw + rechargeSum;
+    // What sim/demand.js subtracts before billing — see the header.
+    STATE.batteryKw = batterySum;
 }
