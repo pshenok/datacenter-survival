@@ -311,4 +311,13 @@ export const EN_TRANSLATIONS = {
     "lv_night_shift_learn": "Tier III is not \"has a backup\". It is concurrent maintainability: any element can be taken out for planned work while the load keeps running. That is a statement about CAPACITY, not about spares — with one bus out, what remains has to carry everything.",
     "lv_night_shift_tip": "Transfer the load off a bus before you open its window. Then check what the surviving buses are actually carrying: two buses cannot hold eighteen kilowatts plus cooling, and the one you leave standing will open its own breaker.",
     "lv_night_shift_tip_fail": "Either the work never happened, or it took the hall with it. Both are Tier III failures. Count the kilowatts the remaining buses have to carry with one of them out — if that number is over sixteen, you need another bus, not a better plan.",
+
+    "maint_pending": "WORK ORDER · {name} · {dur}s out of service · {left}s to start",
+    "maint_active": "IN SERVICE · {s}s remaining",
+    "maint_opened": "{name} out of service — the clock is running",
+    "maint_blocked": "{name}: breaker reset — click again to open its service window",
+    "maint_missed": "Work order expired. The service never happened, and a facility that cannot be serviced is not Tier III.",
+    "insp_service_due": "SERVICE DUE · {dur}s window · {left}s to start",
+    "insp_in_service": "OUT FOR SERVICE · {s}s left",
+    "obj_maintenance": "Complete every work order without served load dropping below {pct}%",
 };

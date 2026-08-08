@@ -37,6 +37,7 @@ let seenContractDone = null;
 let gameOverShown = false;
 let outageWasActive = false;
 let tariffWasActive = false;
+let missedOrders = new Set();
 
 function tick(dt) {
     // While the tutorial runs, game time is frozen: demand stays at the gentle
@@ -110,6 +111,14 @@ function tick(dt) {
         }
     }
     trippedIds = nowTripped;
+
+    // Work orders: issued once at level start, and the miss is the verdict.
+    for (const o of STATE.maintenance.orders) {
+        if (o.state === "missed" && !missedOrders.has(o.buildingId)) {
+            missedOrders.add(o.buildingId);
+            showBanner(i18n.t("maint_missed"), 6000);
+        }
+    }
 
     // Contracts: new offer, then completion/expiry.
     const c = STATE.contract;
@@ -191,6 +200,7 @@ function clearWorld() {
     gameOverShown = false;
     outageWasActive = false;
     tariffWasActive = false;
+    missedOrders = new Set();
 }
 
 // ---- window boundary (index.html inline handlers) ----

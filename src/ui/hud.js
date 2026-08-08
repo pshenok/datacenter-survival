@@ -7,6 +7,7 @@ import { i18n } from "../i18n.js";
 import { lossLedger } from "../sim/attribution.js";
 import { LOSS_CAUSES } from "../core/loss-causes.js";
 import { utilityOf, feedIsDark } from "../sim/power.js";
+import { pendingOrderFor, activeOrderFor } from "../sim/maintenance.js";
 
 const el = (id) => document.getElementById(id);
 let bestPue = Infinity;
@@ -85,6 +86,33 @@ export function tickHud() {
             line.classList.add("hidden");
         }
     }
+
+    // Work orders: the deadline is the whole decision, so it stays on screen
+    // rather than living in a banner that scrolls away while the player is
+    // deciding when to open the window.
+    const mline = el("maintenance-line");
+    if (mline) {
+        const orders = STATE.maintenance.orders;
+        const active = orders.find((o) => o.state === "active");
+        const next = orders.find((o) => o.state === "pending");
+        if (active) {
+            mline.textContent = i18n.t("maint_active", { s: Math.ceil(active.leftSec) });
+        } else if (next) {
+            mline.textContent = i18n.t("maint_pending", {
+                name: i18n.t("b_" + nameOfOrder(next)),
+                dur: next.durationSec,
+                left: Math.max(0, Math.ceil(next.bySec - STATE.elapsedGameTime)),
+            });
+        }
+        mline.classList.toggle("hidden", !active && !next);
+    }
+}
+
+// The order's target type, for a human label. An order whose building has
+// been demolished names nothing rather than crashing the HUD.
+function nameOfOrder(order) {
+    const b = STATE.buildings.find((x) => x.id === order.buildingId);
+    return b ? b.type : "pdu";
 }
 
 // Human label for a contract from STATE.contract — shared by the HUD line
@@ -147,6 +175,16 @@ export function renderInspect(b) {
     }
     if (b.config.chainRole === "load" && !b.powered) {
         rows.push(`<div class="text-red-400 font-bold mb-1">${i18n.t("insp_unpowered")}</div>`);
+    }
+    const servicing = activeOrderFor(b);
+    const pending = pendingOrderFor(b);
+    if (servicing) {
+        rows.push(`<div class="text-sky-300 font-bold mb-1">${i18n.t("insp_in_service", { s: Math.ceil(servicing.leftSec) })}</div>`);
+    } else if (pending) {
+        rows.push(`<div class="text-sky-300 font-bold mb-1">${i18n.t("insp_service_due", {
+            dur: pending.durationSec,
+            left: Math.max(0, Math.ceil(pending.bySec - STATE.elapsedGameTime)),
+        })}</div>`);
     }
     if (b.type === "rack") {
         rows.push(row(i18n.t("insp_load"), `${b.actualKw.toFixed(1)} / ${b.config.capacityKw} kW`));

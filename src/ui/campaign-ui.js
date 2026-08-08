@@ -123,6 +123,9 @@ function objectiveLabel(o) {
     if (o.type === "serve_kwh_during_event") return i18n.t("obj_serve_during", { target: o.target });
     if (o.type === "pue_below") return i18n.t("obj_pue_below", { value: o.value, hold: o.holdSec });
     if (o.type === "money_at_least") return i18n.t("obj_money_left", { target: o.target });
+    if (o.type === "maintenance_without_loss") {
+        return i18n.t("obj_maintenance", { pct: Math.round(o.minServedRatio * 100) });
+    }
     return i18n.t("obj_no_throttle", { hold: o.holdSec });
 }
 
@@ -144,6 +147,11 @@ function objectiveRow(o) {
     } else if (o.type === "pue_below") {
         label = i18n.t("obj_pue_below", { value: o.value, hold: o.holdSec });
         progress = `${Math.floor(Math.min(o.progress, o.holdSec))} / ${o.holdSec}s`;
+    } else if (o.type === "maintenance_without_loss") {
+        label = i18n.t("obj_maintenance", { pct: Math.round(o.minServedRatio * 100) });
+        const orders = STATE.maintenance.orders;
+        const done = orders.filter((m) => m.state === "done").length;
+        progress = `${done} / ${orders.length}`;
     } else {
         label = i18n.t("obj_no_throttle", { hold: o.holdSec });
         progress = `${Math.floor(Math.min(o.progress, o.holdSec))} / ${o.holdSec}s`;
