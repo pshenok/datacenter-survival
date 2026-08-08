@@ -303,4 +303,12 @@ export const EN_TRANSLATIONS = {
     "lv_single_point_of_cold_tip": "Every efficiency win that centralises something buys you a new single point of failure. The question is never whether it is efficient — it is what happens the day it stops.",
     "lv_single_point_of_cold_tip_fail": "Adding another CRAH does not help: it drinks from the same dead plant. Mixed cooling survives what a single loop cannot.",
     "faq_loop_supply": "loop",
+
+    "ch5_title": "Chapter 5 — Serviceable",
+    "lv_night_shift": "Night Shift",
+    "lv_night_shift_brief": "Two work orders, two buses, and eighteen kilowatts that are not allowed to notice.",
+    "lv_night_shift_scenario": "The room works. It is correctly sized, nobody is overloaded, and it has run like this for a year. Tonight both distribution buses are due for scheduled service — twenty-five seconds each, and the deadlines are not yours to move.",
+    "lv_night_shift_learn": "Tier III is not \"has a backup\". It is concurrent maintainability: any element can be taken out for planned work while the load keeps running. That is a statement about CAPACITY, not about spares — with one bus out, what remains has to carry everything.",
+    "lv_night_shift_tip": "Transfer the load off a bus before you open its window. Then check what the surviving buses are actually carrying: two buses cannot hold eighteen kilowatts plus cooling, and the one you leave standing will open its own breaker.",
+    "lv_night_shift_tip_fail": "Either the work never happened, or it took the hall with it. Both are Tier III failures. Count the kilowatts the remaining buses have to carry with one of them out — if that number is over sixteen, you need another bus, not a better plan.",
 };

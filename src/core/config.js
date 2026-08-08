@@ -303,6 +303,7 @@ export const CONFIG = {
             { id: "ch2", titleKey: "ch2_title", levels: ["fuel_clock"] },
             { id: "ch3", titleKey: "ch3_title", levels: ["over_cooled", "one_bus", "cold_room", "two_utilities"] },
             { id: "ch4", titleKey: "ch4_title", levels: ["water_loop", "single_point_of_cold"] },
+            { id: "ch5", titleKey: "ch5_title", levels: ["night_shift"] },
         ],
         levels: {
             // Teach: the delivery chain. Wire feed→transformer→ups→pdu→rack
@@ -590,6 +591,53 @@ export const CONFIG = {
                     ],
                 },
                 objectives: [{ type: "serve_kwh", target: 70 }],
+            },
+
+            // ---- Chapter 5: TIER III --------------------------------------
+
+            // Teach: concurrent maintainability is a CAPACITY property, not a
+            // spares property. The room is handed over working and correctly
+            // sized for NORMAL operation: two buses, 18 kW of racks, nobody
+            // overloaded. It is only wrong for the one thing Tier III
+            // actually grades — being serviceable.
+            //
+            // Probed: transferring the load onto the surviving bus puts
+            // 21 kW (18 kW of racks plus the CRAC) on a 16 kW rating, its
+            // breaker opens, and the hall goes to ZERO. The naive play does
+            // not fall short, it fails harder than doing nothing. A third
+            // bus makes any single window survivable.
+            night_shift: {
+                startMoney: 120,          // one PDU is 50 — the fix is affordable, the slack is not
+                timeLimitSec: 200,
+                demandKw: 18,
+                script: [],
+                maintenance: {
+                    orders: [
+                        { target: 2, durationSec: 25, bySec: 90 },
+                        { target: 3, durationSec: 25, bySec: 170 },
+                    ],
+                },
+                objectives: [
+                    { type: "maintenance_without_loss", minServedRatio: 0.95 },
+                ],
+                preBuilt: {
+                    buildings: [
+                        { type: "grid_feed", gx: 3, gz: 8 },     // 0
+                        { type: "transformer", gx: 6, gz: 8 },   // 1
+                        { type: "pdu", gx: 9, gz: 5 },           // 2  <- first order
+                        { type: "pdu", gx: 9, gz: 11 },          // 3  <- second order
+                        { type: "rack", gx: 13, gz: 4 },         // 4
+                        { type: "rack", gx: 13, gz: 8 },         // 5
+                        { type: "rack", gx: 13, gz: 12 },        // 6
+                        { type: "crac", gx: 16, gz: 8 },         // 7
+                    ],
+                    wires: [
+                        [0, 1],
+                        [1, 2], [1, 3],
+                        [2, 4], [3, 5], [2, 6],
+                        [3, 7],
+                    ],
+                },
             },
         },
     },

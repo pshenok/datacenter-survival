@@ -19,7 +19,8 @@ import { renderPalette, refreshAffordability } from "./src/ui/toolbar.js";
 import { setTool, tickInspect } from "./src/input/handlers.js";
 import { tutorial, showCeremony, shouldOfferTutorial, tickTutorial, notifyOverlayToggled } from "./src/ui/tutorial.js";
 import { openFaq, closeFaq } from "./src/ui/faq.js";
-import { tickCampaign, startLevelState } from "./src/campaign/campaign.js";
+import { tickCampaign, startLevelState, startLevelMaintenance } from "./src/campaign/campaign.js";
+import { tickMaintenance } from "./src/sim/maintenance.js";
 import { applyPreBuilt } from "./src/campaign/prebuilt.js";
 import { initCampaignUi, openCampaign, closeCampaign, openBriefing, closeBriefing, onLevelStart, tickCampaignUi } from "./src/ui/campaign-ui.js";
 import { i18n } from "./src/i18n.js";
@@ -50,6 +51,7 @@ function tick(dt) {
     resolvePower(dt);
     tickHeat(dt);
     tickContracts(dt, STATE.elapsedGameTime);   // judged on THIS tick's facts
+    tickMaintenance(dt, STATE.elapsedGameTime);
     tickCampaign(dt, STATE.elapsedGameTime);    // scripted events + objectives, judged last
 
     // UI-side reactions to sim facts
@@ -239,6 +241,9 @@ window.launchCampaignLevel = (id) => {
     // A diagnosis level hands the player a room that is already running:
     // the pure builder makes the topology, this pass gives it bodies.
     const prebuilt = applyPreBuilt(id);
+    // Work orders index into the room applyPreBuilt just built, so this must
+    // run after it, not inside startLevelState.
+    startLevelMaintenance(id, prebuilt);
     for (const b of prebuilt) attachMesh(b);
     for (const w of STATE.wires) {
         const from = STATE.buildings.find((x) => x.id === w.from);
