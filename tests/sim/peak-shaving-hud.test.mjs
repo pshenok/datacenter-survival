@@ -9,6 +9,8 @@ import { CONFIG } from "../../src/core/config.js";
 import { STATE, resetState } from "../../src/core/state.js";
 import { Building, resetBuildingIds } from "../../src/entities/Building.js";
 import { tickHud, renderInspect } from "../../src/ui/hud.js";
+import { openFaq, closeFaq } from "../../src/ui/faq.js";
+import { i18n } from "../../src/i18n.js";
 
 function place(type, gx = 0, gz = 0) {
     const b = new Building(type, gx, gz);
@@ -86,5 +88,42 @@ describe("UPS inspect panel: buffer plus what it is doing right now", () => {
         expect(panel().textContent).not.toContain("RECHARGING");
         expect(panel().textContent).not.toContain("BRIDGING");
         expect(panel().textContent).toContain(`${CONFIG.buildings.ups.bufferSec}s`);
+    });
+});
+
+describe("FAQ Shaving tab is generated from CONFIG, never hand-written", () => {
+    it("prints the round trip, the charger and the break-even spread straight off CONFIG", () => {
+        const u = CONFIG.buildings.ups;
+        openFaq();
+        const tab = document.querySelector("[data-faqtab=\"shaving\"]");
+        expect(tab).not.toBeNull();
+        tab.click();
+        const text = document.getElementById("faq-content").textContent;
+
+        // Each of these is a number the meter actually bills from. Change
+        // CONFIG and the page changes with it — that is the whole point of
+        // generating it, and the reason no number here is typed by hand.
+        expect(text).toContain(`${((u.capacityKw * u.bufferSec) / 60).toFixed(1)} kWh`);
+        expect(text).toContain(`${Math.round(u.roundTripEff * 100)}%`);
+        expect(text).toContain(`${((u.capacityKw * u.rechargeRate) / u.roundTripEff).toFixed(1)} kW`);
+        expect(text).toContain(`${(u.bufferSec / u.rechargeRate).toFixed(0)}s`);
+        // The spread you must beat to come out ahead, and the one the
+        // day/night meter actually offers.
+        expect(text).toContain(`x${(1 / u.roundTripEff).toFixed(2)}`);
+        expect(text).toContain(`x${(CONFIG.tariff.bands[1].mult / CONFIG.tariff.bands[0].mult).toFixed(2)}`);
+        closeFaq();
+    });
+
+    it("offers the tab in both locales with no raw keys left showing", () => {
+        for (const loc of ["en", "uk"]) {
+            i18n.setLocale(loc);
+            openFaq();
+            document.querySelector("[data-faqtab=\"shaving\"]").click();
+            const text = document.getElementById("faq-content").textContent;
+            expect(text).not.toContain("faq_shave");
+            expect(text.length).toBeGreaterThan(200);
+            closeFaq();
+        }
+        i18n.setLocale("en");
     });
 });

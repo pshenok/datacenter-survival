@@ -33,28 +33,45 @@ export const CONFIG = {
             // Seconds of full-subtree draw it can carry when its source goes
             // dark (a blip, not a blackout — generators are post-MVP).
             bufferSec: 8,
-            // ---- Peak shaving (STATE.peakShave) --------------------------
+            // ---- The battery, as energy (STATE.peakShave) ----------------
+            // A buffer-second is one second of capacityKw draw, so the
+            // buffer's full energy content is capacityKw * bufferSec —
+            // 288 kW.s here. Every path that spends it (the outage bridge,
+            // peak shaving) and the one that puts it back are measured in
+            // that currency, or the meter invents energy.
+            //
             // Recharging is NOT free. A real battery gives back less than
             // you put in — some of the draw becomes heat in the cells and
-            // the charger, not stored charge — so putting a second of
-            // buffer back costs more than that second is worth delivered.
-            // rechargeKw is the draw while topping off, billed exactly like
-            // any load's draw (sim/power.js adds it into totalDrawKw, the
-            // same accumulator a CRAC's idle draw feeds). roundTripEff is
-            // the fraction of that draw that actually lands in the buffer;
-            // the rest is the loss. Chosen so the buffer refills at EXACTLY
-            // the pace it always did — dt/4, a quarter of capacityKw's
-            // worth of buffer-seconds per second — grossed up by the loss:
-            // rechargeKw * roundTripEff / capacityKw = 9/36 = 0.25. So the
-            // existing recharge-rate behaviour (and the test that pins it)
-            // is unchanged; only the bill and the buffer's own math change.
+            // the charger, not stored charge — so putting a kW.s back costs
+            // more than that kW.s is worth delivered. roundTripEff is the
+            // fraction of the charger's draw that actually lands in the
+            // battery; the rest is the loss.
+            //
+            // The charger is sized from the UPS's OWN capacity, not as a
+            // flat kW: rechargeRate is the share of capacityKw that lands
+            // in the battery per second, so the charger's draw is
+            // capacityKw * rechargeRate / roundTripEff = 36 * 0.25 / 0.9 =
+            // 10 kW here, and a bigger or smaller UPS scales with it. At
+            // 0.25 a battery emptied at the UPS's full rating takes
+            // bufferSec / 0.25 = 32 s to come back — the pace it always
+            // recharged at.
+            //
+            // What is NOT flat any more is the ENERGY billed. The charger
+            // restores what actually left the battery (Building.bufferOwedKws,
+            // written by sim/power.js), not a nameplate refill: a UPS that
+            // bridged a 12 kW room for 8 s gave up 96 kW.s, not 288, and
+            // pays for 96/roundTripEff — a third of the old bill, over a
+            // third of the old window. Billing a full nameplate refill after
+            // a light discharge is what doubled a small room's PUE for 32 s
+            // and made the pue_hold contract arithmetically unwinnable after
+            // any outage.
             //
             // Without a real cost here, peak shaving is free money: charge
             // low, discharge high, nothing given back either way — exactly
             // what this project's mechanic-proposal form rejects ("if the
             // answer to 'when would you NOT want this?' is 'never', the
             // mechanic is not ready").
-            rechargeKw: 10,
+            rechargeRate: 0.25,
             roundTripEff: 0.9,
         },
         pdu: {

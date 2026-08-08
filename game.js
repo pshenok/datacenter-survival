@@ -338,9 +338,18 @@ window.toggleThermalOverlay = () => { notifyOverlayToggled(); return toggleTherm
 // and src/input/* only ever read STATE, per the architecture boundary.
 function syncPeakShaveUi() {
     const btn = document.getElementById("btn-peakshave");
-    if (btn) btn.classList.toggle("text-emerald-300", STATE.peakShave.on);
+    if (!btn) return;
+    // Own exactly one colour class at a time. Leaving both on the element
+    // makes the winner Tailwind's emission order rather than the toggle —
+    // the pause and overlay buttons avoid it the same way.
+    btn.classList.toggle("text-emerald-300", STATE.peakShave.on);
+    btn.classList.toggle("text-gray-300", !STATE.peakShave.on);
 }
 window.togglePeakShave = () => {
+    // Same gate as togglePause: no arming a mechanic from the menu, and none
+    // behind a result modal. Without it the button paints lit over a room
+    // that does not exist yet.
+    if (!STATE.isRunning || STATE.gameOver !== null || STATE.campaign.done !== null) return;
     STATE.peakShave.on = !STATE.peakShave.on;
     syncPeakShaveUi();
 };

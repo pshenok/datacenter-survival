@@ -9,10 +9,17 @@
 //                       buffer this tick (peak shaving) rather than the
 //                       grid. sim/demand.js bills (totalDrawKw - batteryKw);
 //                       totalDrawKw/PUE do not change meaning — see below.
+//                       Accumulated at the LOADS that consumed it, never
+//                       once per UPS traversed: ups -> ups is a legal edge,
+//                       and crediting per UPS bills a two-deep chain twice.
 // Building fields owned by this module (declared in entities/Building.js):
 //   parentId, childIds — power topology, via wireBuildings()/unwire()
 //   actualKw, powered  — per-tick resolution results (links carry, loads draw)
 //   bufferLeft         — UPS buffer seconds remaining
+//   bufferOwedKws      — kW.s that actually left the battery and must be
+//                        bought back; what the charger works down
+//   rechargeReqKw      — the charger's request, folded into the pull so the
+//                        link above the UPS has to carry it
 //   upsMode            — "idle" | "charging" | "shaving" | "bridging"
 // Inputs read, never written: assignedKw (sim/demand.js), duty (sim/heat.js),
 // STATE.peakShave.on (the player's toggle; owned by game.js).
@@ -34,13 +41,23 @@
 //     from bufferLeft (draining dt per tick while carrying draw > 0; at 0
 //     the subtree goes dark) — the existing outage bridge, untouched by any
 //     of the below. Otherwise, while the path is live: PEAK SHAVING
-//     (STATE.peakShave.on, a player toggle, off by default) drains the
-//     buffer into the subtree instead of drawing from the grid, whenever
-//     there is charge to spend — the player's own choice to spend stored
-//     energy rather than buy it at whatever the meter costs right now. When
-//     not shaving (or the buffer is empty), it recharges at 1/4 rate while
-//     below max — same rate as always, but no longer free: see
-//     CONFIG.buildings.ups for the round-trip-loss accounting.
+//     (STATE.peakShave.on, a player toggle, off by default) spends the
+//     battery into the subtree instead of buying the same kW from the grid
+//     — the player's own choice to spend stored energy rather than pay
+//     whatever the meter costs right now. When not shaving (or the buffer
+//     is empty), the charger buys the energy back: see CONFIG.buildings.ups.
+//
+//     THE BUFFER IS ENERGY, AND THE ENERGY HAS TO BALANCE. Shaving may only
+//     hand out what the battery actually holds this tick: delivering
+//     `kw` for `dt` seconds costs `kw * dt` kW.s, which is
+//     `kw * dt / capacityKw` buffer-seconds, and if the battery holds less
+//     than that the grid carries the remainder — the subtree is never
+//     under-served, but the meter is never credited for a kW.s that was not
+//     in the battery. A grant that ignored the charge left (and a
+//     Math.max(0, ...) that forgave the shortfall) made a UPS a 400%
+//     round-trip generator, profitable to leave switched on at any tariff.
+//     The charger is the mirror image: it puts back exactly what left, so a
+//     full cycle returns roundTripEff of what it cost and never more.
 //   - a load is powered when it sits on a live chain and either draws power
 //     or requested none (an idle rack on a live chain is powered).
 //
@@ -156,6 +173,26 @@ export function isDeadGear(b) {
     return b.tripped || b.outForService;
 }
 
+// The charger's draw while topping a UPS off, in kW — sized from the UPS's
+// own capacity, not a flat number (see CONFIG.buildings.ups). Zero unless
+// this UPS is actually going to charge, because the pull phase folds it into
+// what the link ABOVE has to carry: a charger that is not running must not
+// reserve a single kW of an upstream feed.
+//
+// Spending the battery and filling it in the same tick is not a thing, so a
+// UPS with charge left and the shave toggle on asks for nothing. That is
+// also what makes leaving the toggle on cost money rather than make it: the
+// battery empties, the charger buys it back, the toggle spends it again, and
+// every lap pays the round-trip loss for no change in when the energy was
+// bought.
+function chargerRequestKw(b) {
+    const max = b.config.bufferSec || 0;
+    if (b.bufferLeft >= max || isDeadGear(b)) return 0;
+    if (STATE.peakShave.on && b.bufferLeft > 0) return 0;
+    const eff = b.config.roundTripEff > 0 ? b.config.roundTripEff : 1;
+    return ((b.config.capacityKw || 0) * (b.config.rechargeRate || 0)) / eff;
+}
+
 // Is a building's PRIMARY parent path dead? Walks parentIds to the root,
 // ignoring UPS buffers — a bridged subtree still has a dead primary, which
 // is exactly when the transfer switch must start its cutover countdown.
@@ -200,7 +237,10 @@ export function resolvePower(dt) {
     // not pay double buffer mutations (drained as dead, then recharged).
     const bufSnap = new Map();
     for (const b of STATE.buildings) {
-        if (b.type === "ups") bufSnap.set(b.id, b.bufferLeft);
+        // Seconds AND the energy they owe travel together — restoring one
+        // without the other leaves a UPS that reads full and still bills a
+        // recharge, or the reverse.
+        if (b.type === "ups") bufSnap.set(b.id, { sec: b.bufferLeft, owed: b.bufferOwedKws });
         b.clippedKw = 0;
     }
 
@@ -268,6 +308,22 @@ export function resolvePower(dt) {
             // Diagnostic only (sim/attribution.js reads it to name WHICH link
             // starved a rack). Nothing in the resolution reads it back.
             b.clippedKw = Math.max(0, sum - p);
+            // A RECHARGING UPS IS A LOAD ON ITS OWN UPSTREAM. The charger
+            // hangs off the input side, so it rides ON TOP of the output the
+            // UPS is rated to carry (capacityKw is an output rating) but is
+            // still carried, and therefore clipped, by every link above —
+            // and burned as fuel by a generator that happens to be the one
+            // carrying it. Billing the charger straight into totalDrawKw
+            // without ever putting it on the chain is how a UPS recharged on
+            // utility power in the middle of a total blackout.
+            //
+            // demandedKw and clippedKw stay output-side on purpose: the
+            // breaker below integrates what the SUBTREE demanded of this
+            // link, and a charger must not trip the UPS's own breaker.
+            if (b.type === "ups") {
+                b.rechargeReqKw = chargerRequestKw(b);
+                p += b.rechargeReqKw;
+            }
         }
         pulls.set(b.id, p);
         return p;
@@ -276,7 +332,13 @@ export function resolvePower(dt) {
     // 3) Top-down delivery: grants split proportionally to child pulls, so
     // every clip browns out its subtree uniformly.
     const visited = new Set();
-    function deliver(b, live, grantKw) {
+    // grantBattKw: how much of grantKw came out of a battery upstream rather
+    // than off the meter. It rides DOWN the chain and is banked at the loads,
+    // because that is the only place a kW is counted exactly once — a UPS
+    // may sit under another UPS, and crediting each one as it is traversed
+    // bills a two-deep chain twice and lets the un-buffered half of the room
+    // ride free behind demand.js's clamp.
+    function deliver(b, live, grantKw, grantBattKw = 0) {
         if (visited.has(b.id)) return;
         visited.add(b.id);
         const pull = pullOf(b);
@@ -285,61 +347,109 @@ export function resolvePower(dt) {
             const got = live ? Math.min(grantKw, pull) : 0;
             b.actualKw = got;
             b.powered = live && (got > 0 || pull === 0);
+            // THE ONE PLACE batterySum grows.
+            if (got > 0 && grantBattKw > 0) batterySum += Math.min(got, grantBattKw);
             return;
         }
 
         let outLive = live;
         let outKw = live ? Math.min(grantKw, pull) : 0;
+        // Battery-sourced share of what this link actually carries. A link
+        // clipped to half its grant carries half the battery kW too.
+        let outBattKw = 0;
+        if (outKw > 0 && grantBattKw > 0 && Number.isFinite(grantKw) && grantKw > 0) {
+            outBattKw = Math.min(outKw, grantBattKw * Math.min(1, outKw / grantKw));
+        }
+        // What this node draws from its PARENT. Identical to outKw for
+        // everything except a charging UPS, which also draws its charger.
+        let carriedKw = outKw;
 
         if (b.type === "ups") {
             const max = b.config.bufferSec || 0;
-            // PEAK SHAVING takes priority over recharging: the player has
-            // asked to spend stored energy right now even though the grid
-            // could serve this subtree normally (outLive is true — this is
-            // NOT the outage bridge below, which only ever sees outLive
-            // false). Bypasses grantKw entirely, same as the outage
-            // self-grant does, and drains at the same 1 sec-of-buffer per
-            // sec-of-wall-time rate as that path.
-            if (STATE.peakShave.on && outLive && b.bufferLeft > 0) {
-                outKw = pull;
-                if (pull > 0) {
-                    b.bufferLeft = Math.max(0, b.bufferLeft - dt);
-                }
-                batterySum += outKw;
-                b.upsMode = pull > 0 ? "shaving" : "idle";
-            } else if (outLive) {
-                if (b.bufferLeft < max) {
-                    // Draw rechargeKw for dt seconds; round-trip loss means
-                    // only roundTripEff of that ENERGY lands in the buffer.
-                    // A buffer-second is defined as "one second of
-                    // capacityKw draw" (bufferSec's own definition), so
-                    // dividing stored energy by capacityKw converts it into
-                    // buffer-seconds. With the shipped numbers this comes to
-                    // dt/4 — the same rate recharging always ran at — because
-                    // rechargeKw was chosen as capacityKw/4 grossed up by the
-                    // loss (rechargeKw * roundTripEff / capacityKw = 0.25;
-                    // see CONFIG.buildings.ups). Only the billing is new.
-                    const eff = b.config.roundTripEff > 0 ? b.config.roundTripEff : 1;
-                    const rate = b.config.rechargeKw || 0;
-                    const wouldAdd = (rate * eff * dt) / b.config.capacityKw;
-                    const added = Math.max(0, Math.min(max - b.bufferLeft, wouldAdd));
-                    b.bufferLeft += added;
-                    // Bill exactly the grid draw that produced `added`,
-                    // tapered on the last partial tick that tops the buffer
-                    // off — nothing is billed that didn't charge anything.
-                    if (wouldAdd > 0) rechargeSum += rate * (added / wouldAdd);
-                    b.upsMode = "charging";
+            const cap = b.config.capacityKw || 0;
+            const eff = b.config.roundTripEff > 0 ? b.config.roundTripEff : 1;
+            // pull = the output-side subtree (already clipped by cap) PLUS
+            // the charger request folded in by the pull phase. Only the
+            // subtree part may go to the children.
+            const subtreePull = Math.max(0, pull - (b.rechargeReqKw || 0));
+
+            if (outLive) {
+                // The load is served first; the charger lives on whatever is
+                // left of the grant. A UPS never charges off another UPS's
+                // battery — that pays the round-trip loss twice to move
+                // energy sideways.
+                const served = Math.min(outKw, subtreePull);
+                let battOut = Math.min(served, outBattKw);
+                const gridLeft = Math.max(0, outKw - served - (outBattKw - battOut));
+                let chargeKw = 0;
+
+                if (STATE.peakShave.on && b.bufferLeft > 0 && served > battOut) {
+                    // PEAK SHAVING. Displace the GRID-sourced part of what
+                    // this UPS is already delivering — same kW to the racks,
+                    // bought from the battery instead of the meter — and
+                    // only as far as the charge actually in the battery this
+                    // tick reaches. Serving `displaceable` kW for dt seconds
+                    // is displaceable*dt kW.s, which is that over capacityKw
+                    // in buffer-seconds (bufferSec's own definition); when
+                    // the battery holds less, the grid quietly carries the
+                    // rest and the meter is credited only for what was
+                    // really in there.
+                    const displaceable = served - battOut;
+                    const wantSec = cap > 0 ? (displaceable * dt) / cap : 0;
+                    const useSec = Math.min(wantSec, b.bufferLeft);
+                    const fromBattery = (useSec * cap) / dt;
+                    b.bufferLeft -= useSec;
+                    b.bufferOwedKws += fromBattery * dt;
+                    battOut += fromBattery;
+                    b.upsMode = fromBattery > 0 ? "shaving" : "idle";
+                } else if ((b.rechargeReqKw || 0) > 0 && gridLeft > 0 && b.bufferLeft < max) {
+                    // RECHARGE. The charger draws what its rating and its
+                    // upstream will allow, and puts back exactly the energy
+                    // that left (bufferOwedKws) — never a nameplate refill.
+                    // Seconds come back in step with the energy, so both hit
+                    // full together however deep or shallow the discharge.
+                    const deficitSec = max - b.bufferLeft;
+                    const owed = b.bufferOwedKws > 0 ? b.bufferOwedKws : deficitSec * cap;
+                    if (owed > 0) {
+                        const draw = Math.min(b.rechargeReqKw, gridLeft);
+                        const restored = Math.min(owed, draw * eff * dt);
+                        chargeKw = restored / (eff * dt);
+                        b.bufferLeft = Math.min(max, b.bufferLeft + deficitSec * (restored / owed));
+                        b.bufferOwedKws = Math.max(0, owed - restored);
+                        if (b.bufferOwedKws === 0) b.bufferLeft = max;
+                        rechargeSum += chargeKw;
+                        b.upsMode = "charging";
+                    } else {
+                        b.upsMode = "idle";
+                    }
                 } else {
                     b.upsMode = "idle";
                 }
+
+                outKw = served;
+                outBattKw = battOut;
+                carriedKw = served + chargeKw;
             } else if (b.bufferLeft > 0) {
+                // The outage bridge, unchanged: seconds are spent at the
+                // UPS's full rating however little it is carrying, because
+                // that is the question this path answers — "how long do I
+                // have?" — and every campaign level is proven against it.
+                // The ENERGY it really handed over is what the charger will
+                // have to buy back, so that is what gets recorded.
                 outLive = true;
-                outKw = pull; // self-grant: serve the subtree from the buffer
-                if (pull > 0) {
-                    b.bufferLeft = Math.max(0, b.bufferLeft - dt);
+                outKw = subtreePull; // self-grant: serve the subtree from the buffer
+                if (subtreePull > 0) {
+                    const drainedSec = Math.min(dt, b.bufferLeft);
+                    b.bufferLeft -= drainedSec;
+                    b.bufferOwedKws += subtreePull * drainedSec;
                 }
+                outBattKw = 0; // bridged load is not peak shaving; see demand.js
+                carriedKw = outKw;
                 b.upsMode = "bridging";
             } else {
+                outKw = 0;
+                outBattKw = 0;
+                carriedKw = 0;
                 b.upsMode = "idle";
             }
         }
@@ -353,9 +463,11 @@ export function resolvePower(dt) {
         if (isDeadGear(b)) {
             outLive = false;
             outKw = 0;
+            outBattKw = 0;
+            carriedKw = 0;
         }
 
-        b.actualKw = outKw; // carried kW through this link/source
+        b.actualKw = carriedKw; // carried kW through this link/source
         b.powered = outLive;
 
         let totalChildPull = 0;
@@ -370,8 +482,8 @@ export function resolvePower(dt) {
         // idle (zero-pull) subtree on a live chain stays live.
         const childLive = outLive && (outKw > 0 || totalChildPull === 0);
         for (const c of kids) {
-            const share = totalChildPull > 0 ? outKw * (pullOf(c) / totalChildPull) : 0;
-            deliver(c, childLive, share);
+            const frac = totalChildPull > 0 ? pullOf(c) / totalChildPull : 0;
+            deliver(c, childLive, outKw * frac, outBattKw * frac);
         }
     }
 
@@ -463,7 +575,8 @@ export function resolvePower(dt) {
                 visited.delete(n.id);
                 redelivered.add(n.id);
                 if (n.type === "ups" && bufSnap.has(n.id)) {
-                    n.bufferLeft = bufSnap.get(n.id);
+                    n.bufferLeft = bufSnap.get(n.id).sec;
+                    n.bufferOwedKws = bufSnap.get(n.id).owed;
                 }
                 for (const cid of n.childIds) {
                     const k = byId.get(cid);
@@ -483,6 +596,14 @@ export function resolvePower(dt) {
     // draining nor recharging: its own upstream is still dead). A UPS still
     // bridging other, non-transferred loads keeps its drain — buffer time is
     // time, however many kW it carries.
+    //
+    // A UPS the wave ITSELF re-delivered is excluded: it was reset from the
+    // snapshot and re-resolved a few lines up, on a live path, off the
+    // generator. Restoring it again undoes the charge it just took, so it
+    // sits pinned at the same bufferLeft for the whole outage while billing
+    // its charger every tick — a recharge that is charged for and never
+    // happens, which is what "the UPS spent 21.90 s recharging during a
+    // total blackout" actually was.
     if (redelivered.size > 0) {
         const carriesOutsideRedelivered = (node) => {
             for (const cid of node.childIds) {
@@ -499,8 +620,10 @@ export function resolvePower(dt) {
             let node = byId.get(c.parentId);
             let hops = 0;
             while (node && ++hops <= STATE.buildings.length) {
-                if (node.type === "ups" && !carriesOutsideRedelivered(node)) {
-                    node.bufferLeft = bufSnap.get(node.id);
+                if (node.type === "ups" && !redelivered.has(node.id)
+                    && !carriesOutsideRedelivered(node)) {
+                    node.bufferLeft = bufSnap.get(node.id).sec;
+                    node.bufferOwedKws = bufSnap.get(node.id).owed;
                     node.actualKw = 0;
                 }
                 node = node.parentId && node.parentId !== "grid" ? byId.get(node.parentId) : null;

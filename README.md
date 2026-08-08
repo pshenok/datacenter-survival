@@ -104,16 +104,21 @@ real playthrough.
 
 ## Status
 
-Thirteen campaign levels across five chapters, nine buildings, 304 tests.
+Thirteen campaign levels across five chapters, nine buildings, 336 tests.
 Simulation: wired power with inverse-time breakers, a diffusing heat field
 with part-load cooling, a shared chilled-water loop, UPS buffers, standby
-generators with fuel, grid sags, per-substation outages, peak tariffs,
-rolling contracts, and per-cause loss attribution. English and Ukrainian.
+generators with fuel, grid sags, per-substation outages, time-of-use and peak
+tariffs, peak shaving off the UPS battery, rolling contracts, and per-cause
+loss attribution. English and Ukrainian.
 
-Next: time-of-use tariffs
-([#4](https://github.com/pshenok/datacenter-survival/issues/4)) — day/night
-pricing, pre-cooling and peak shaving — and a Lab level with live knobs, the
-last open item on the roadmap
+Peak shaving is a toggle, not an upgrade. A charged UPS can serve its subtree
+from the battery instead of the meter, but the battery gives back less than
+it takes, so the round trip only pays if you spend it into a band that is
+dearer than the one you buy it back in. Left switched on at a flat price it
+loses money and leaves you with no ride-through — the FAQ's Shaving tab has
+the numbers, generated from the same config the simulation bills from.
+
+Next: a Lab level with live knobs, the last open item on the roadmap
 ([#5](https://github.com/pshenok/datacenter-survival/issues/5)).
 
 ## Contributing

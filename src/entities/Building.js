@@ -39,6 +39,24 @@ export class Building {
         // UPS buffer seconds remaining (owned by sim/power.js).
         this.bufferLeft = type === "ups" ? this.config.bufferSec : 0;
 
+        // ENERGY (kW.s) the battery still owes itself — what actually left
+        // it, not what a nameplate refill would cost. Owned by sim/power.js:
+        // the outage bridge and peak shaving add the energy they really
+        // delivered, the charger works it back down. bufferLeft counts
+        // SECONDS and the bridge spends them at the UPS's full rating
+        // whatever it is carrying, so the two are not interchangeable — a
+        // UPS that bridged a light room has burned its seconds without
+        // burning the matching energy, and billing it for the seconds is
+        // what made a recharge cost three times what the outage did.
+        this.bufferOwedKws = 0;
+
+        // The charger's request this tick (kW), written by sim/power.js's
+        // pull phase so the link ABOVE this UPS has to carry it: a
+        // recharging UPS is a load on its own upstream, clipped by that
+        // upstream's capacity and burning a generator's fuel when the
+        // generator is the one carrying it.
+        this.rechargeReqKw = 0;
+
         // UPS status this tick (owned by sim/power.js): "idle" | "charging"
         // | "shaving" (peak shaving, draining into the meter's expensive
         // window) | "bridging" (existing outage self-grant). Read by the

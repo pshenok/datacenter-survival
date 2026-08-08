@@ -362,7 +362,8 @@ describe("resolvePower — UPS buffer", () => {
         expect(rack.powered).toBe(false);
     });
 
-    it("recharges at 1/4 rate on a live path, capped at bufferSec", () => {
+    it("recharges by the ENERGY that left, not the seconds, capped at bufferSec", () => {
+        const u = CONFIG.buildings.ups;
         const { t, ups, pdu } = chain();
         const rack = place("rack");
         rack.assignedKw = 4;
@@ -370,12 +371,25 @@ describe("resolvePower — UPS buffer", () => {
         unwire(ups);
         for (let i = 0; i < 3; i++) resolvePower(1);
         expect(ups.bufferLeft).toBeCloseTo(5, 9);
+        // Bridging spends SECONDS at the UPS's full rating whatever it is
+        // carrying, but the battery only handed over what the room drew:
+        // 3 s at 4 kW is 12 kW.s, not the 3 x 36 = 108 kW.s a nameplate
+        // refill would make the player buy back.
+        expect(ups.bufferOwedKws).toBeCloseTo(12, 9);
         wireBuildings(t, ups); // power restored
-        resolvePower(2);
-        expect(ups.bufferLeft).toBeCloseTo(5.5, 9); // +dt/4
+        // The charger is sized off the UPS's own capacity and lands
+        // roundTripEff of its draw in the battery: 10 kW in, 9 kW.s/s stored.
+        resolvePower(0.5);
+        expect(ups.bufferOwedKws).toBeCloseTo(12 - 4.5, 9);
+        // Seconds come back in step with the energy, so both reach full
+        // together: 37.5% of the energy is 37.5% of the 3 missing seconds.
+        expect(ups.bufferLeft).toBeCloseTo(5 + 3 * (4.5 / 12), 9);
         expect(rack.actualKw).toBeCloseTo(4, 9); // served by the grid again
+        resolvePower(1);
+        expect(ups.bufferLeft).toBe(u.bufferSec); // capped, and paid off
+        expect(ups.bufferOwedKws).toBe(0);
         resolvePower(100);
-        expect(ups.bufferLeft).toBe(CONFIG.buildings.ups.bufferSec); // capped
+        expect(ups.bufferLeft).toBe(u.bufferSec);
     });
 
     it("does not drain while the outage subtree draws nothing, and keeps it live", () => {
