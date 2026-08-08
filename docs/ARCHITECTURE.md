@@ -55,10 +55,10 @@ modules, and both are deliberate:
   from its buffer either"
 
 Both encode the same physics: an open breaker is dead gear, and a UPS behind
-its own open breaker is dead too. Any new dead-root condition you add — a
-fused transformer, a dry generator on a link, an open transfer switch — has to
-be placed against that rule in **both** files, not copied from whichever one
-you read first.
+its own open breaker is dead too. Both sites now call the shared
+`isDeadGear(b)` predicate exported from `power.js`, so a new dead-gear
+condition is added once rather than placed twice — placing it by hand is how
+one copy ends up on the wrong side.
 
 **Sim modules never read `STATE.timeScale`.** `dt` arrives already scaled by
 `game.js`. Only the UI layer reads it directly.

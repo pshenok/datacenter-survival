@@ -128,6 +128,19 @@ export function feedIsDark(building) {
     return scope === "all" || scope === utilityOf(building);
 }
 
+// Gear that is not passing power, whatever the reason. Today: an open
+// breaker, or an open service window (sim/maintenance.js).
+//
+// This exists as one predicate because its two call sites sit on DELIBERATELY
+// opposite sides of the UPS clause — before it in demand.js's chainAlive, so
+// a tripped UPS cannot read as live and reintroduce the starvation bug pinned
+// in tests/integration.test.mjs; after it in deliver(), so a tripped UPS
+// cannot self-grant from its own buffer. Adding a second condition at each
+// site by hand is how one of them ends up on the wrong side.
+export function isDeadGear(b) {
+    return b.tripped || b.outForService;
+}
+
 // Is a building's PRIMARY parent path dead? Walks parentIds to the root,
 // ignoring UPS buffers — a bridged subtree still has a dead primary, which
 // is exactly when the transfer switch must start its cutover countdown.
@@ -146,7 +159,7 @@ function primaryPathDead(b, byId) {
         // generator's cutover clock resets every tick while assignment keeps
         // feeding the subtree work nobody delivers: the assigned-but-never-
         // served starvation the integration suite exists to prevent.
-        if (node.tripped) return true;
+        if (isDeadGear(node)) return true;
         if (node.parentId === null || ++hops > maxHops) return true;
         node = byId.get(node.parentId);
     }
@@ -265,7 +278,7 @@ export function resolvePower(dt) {
         // NOT POWERED row, and keep counting toward no-throttle streaks
         // while serving nothing. Placed after the UPS clause so a tripped
         // UPS cannot self-grant from its buffer either.
-        if (b.tripped) {
+        if (isDeadGear(b)) {
             outLive = false;
             outKw = 0;
         }
