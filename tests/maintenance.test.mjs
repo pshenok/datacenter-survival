@@ -11,6 +11,7 @@ import { Building, resetBuildingIds } from "../src/entities/Building.js";
 import { wireBuildings, resolvePower, isDeadGear } from "../src/sim/power.js";
 import { tickDemand, tickEvents } from "../src/sim/demand.js";
 import { tickHeat } from "../src/sim/heat.js";
+import { resetBreaker } from "../src/sim/crisis.js";
 import {
     initMaintenance, tickMaintenance, openServiceWindow,
     pendingOrderFor, activeOrderCount,
@@ -306,5 +307,32 @@ describe("the ledger tells the truth about why the room went dark", () => {
             const summed = Object.values(STATE.losses.tickKw).reduce((a, b) => a + b, 0);
             expect(summed).toBeCloseTo(missed, 9);
         }
+    });
+
+    it("won't let a scheduled window hide a live breaker trip — the fault has to be cleared first", () => {
+        const { p } = room();
+        // Four more racks on the same 16 kW PDU push its demandedKw to 30 kW
+        // (187% of rating), so the breaker opens on its own in a few seconds
+        // — nobody has to hand-set `tripped` for this to be real.
+        for (let i = 0; i < 4; i++) {
+            wireBuildings(p, place("rack", 12 + i, 3));
+        }
+        STATE.demandFixedKw = 30;
+        initMaintenance([{ target: 2, durationSec: 20, bySec: 90 }], STATE.buildings);
+        run(5);
+        expect(p.tripped).toBe(true);
+
+        expect(openServiceWindow(p, STATE.elapsedGameTime)).toBe(false);
+        expect(p.outForService).toBe(false);
+        expect(STATE.maintenance.orders[0].state).toBe("pending");
+        run(1);
+        expect(STATE.losses.tickKw.breaker_tripped).toBeGreaterThan(0);
+        expect(STATE.losses.tickKw.maintenance || 0).toBe(0);
+
+        // Clear the fault the normal way — the select-click reset — and the
+        // window that was refused a moment ago now opens.
+        expect(resetBreaker(p)).toBe(true);
+        expect(openServiceWindow(p, STATE.elapsedGameTime)).toBe(true);
+        expect(p.outForService).toBe(true);
     });
 });

@@ -62,10 +62,16 @@ export function activeOrderCount() {
 
 // Open the window. Returns false — silently, like every other refusal in the
 // sim layer — when there is no pending order for this building, which covers
-// gear nobody scheduled and an order already opened, done, or missed.
+// gear nobody scheduled and an order already opened, done, or missed. Also
+// refuses a building whose breaker is open: the player clears the fault
+// first (the same select-click that resets any other tripped breaker), so
+// a service window never opens over a live unresolved overload. Letting it
+// through would let a scheduled outage mask an unfixed trip in the one
+// panel whose job is to say which one is costing the money.
 export function openServiceWindow(building) {
     const order = pendingOrderFor(building);
     if (!order) return false;
+    if (building.tripped) return false;
     order.state = "active";
     order.leftSec = order.durationSec;
     building.outForService = true;
