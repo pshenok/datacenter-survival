@@ -48,7 +48,7 @@ PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i
 npm run check     # eslint . && vitest run — exactly what CI runs
 ```
 
-Baseline today: lint clean, 15 test files, 259 tests, about 1.3 s. CI uses
+Baseline today: lint clean, 17 test files, 304 tests, about 1.5 s. CI uses
 Node 22. The skip flag matters because `playwright` is a devDependency whose
 postinstall downloads hundreds of MB of browsers that nothing in `check` uses
 — the demo recorder drives system Chrome.
@@ -87,15 +87,15 @@ globals. Run `npm run check`, not `npm run lint`.
 **A run can be decided two ways, and they are guarded differently.**
 `STATE.gameOver` (bankrupt, reputation floor) is guarded inside the four
 schedule-owning ticks. `STATE.campaign.done` is guarded only by
-`tickCampaign`. Eleven of twelve levels resolve as WON rather than as game
+`tickCampaign`. Twelve of thirteen levels resolve as WON rather than as game
 over, so a new tick function that checks only `gameOver` keeps simulating
 behind the result modal on the *ordinary* path, not the rare one.
 
 **Do not change the tick order.** `tickEvents → tickCrisis → tickDemand →
-resolvePower → tickHeat → tickContracts → tickCampaign`. It encodes causality,
-and nothing asserts it: the loop is hand-copied into nine test helpers, so
-reordering `game.js` leaves the whole suite green while the shipped game
-behaves differently. That is the worst failure mode a teaching game has.
+resolvePower → tickHeat → tickContracts → tickMaintenance → tickCampaign`. It
+encodes causality, and nothing asserts it: the loop is hand-copied into ten
+test helpers, so reordering `game.js` leaves the whole suite green while the
+shipped game behaves differently. That is the worst failure mode a teaching game has.
 
 **Randomness is injected** — `tickCrisis(dt, elapsed, rng = Math.random)`.
 Never call `Math.random` in a sim module. Schedules use two sentinel values:
@@ -103,7 +103,7 @@ Never call `Math.random` in a sim module. Schedules use two sentinel values:
 "can never fire" (how a campaign level guarantees a deterministic script).
 
 **`resetState()` is hand-maintained.** Add a field to the `STATE` literal and
-forget `resetState()` and all 259 tests still pass — the field is silently
+forget `resetState()` and all 304 tests still pass — the field is silently
 deleted on the first reset. Call `resetBuildingIds()` alongside every
 `resetState()`, and `resetWireIds()` too if you use `src/sim/build.js`.
 
@@ -160,7 +160,7 @@ Four specifics:
 
 **The contract: every level ships with a machine-played WIN case and at least
 one LOSE case, where LOSE is the same room built without the mechanic the
-level teaches.** All twelve levels have their pair today. No meta-test
+level teaches.** All thirteen levels have their pair today. No meta-test
 enforces it, which is exactly why it is the first thing a reviewer asks — a
 level with no LOSE case may be a level you win by doing nothing, and its WIN
 test will certify it.

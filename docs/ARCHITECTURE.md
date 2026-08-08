@@ -113,7 +113,7 @@ contract and fires a crisis on the way down.
 
 `STATE.campaign.done` is guarded only by `tickCampaign`, which returns before
 its own `dt` check; the freeze reaches everything else through the callback
-`game.js` hands to the campaign UI. Eleven of twelve levels resolve as WON
+`game.js` hands to the campaign UI. Twelve of thirteen levels resolve as WON
 rather than as game over, so a new tick function that checks only `gameOver`
 keeps simulating behind the result modal on the *ordinary* path.
 
@@ -221,7 +221,7 @@ and put the list in the commit body. Both feature commits in the log do it.
 
 Every level is machine-provably winnable with the mechanic it teaches and
 losable without it — the same room, built without the mechanic, played by the
-test suite, scoring provably short. All twelve levels have their pair, in
+test suite, scoring provably short. All thirteen levels have their pair, in
 `tests/campaign.test.mjs`, `tests/generator.test.mjs` and
 `tests/prebuilt.test.mjs`.
 
