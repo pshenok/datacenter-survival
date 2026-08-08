@@ -17,6 +17,7 @@ import {
     pendingOrderFor, activeOrderCount,
 } from "../src/sim/maintenance.js";
 import { tickCampaign, startLevelState, levelCfg } from "../src/campaign/campaign.js";
+import { demolishBuilding } from "../src/sim/build.js";
 
 const DT = 0.05;
 
@@ -392,6 +393,59 @@ describe("dead SOURCES are dead roots too — isDeadGear runs before the grid br
         // there is.
         expect(gen.actualKw).toBeGreaterThan(0);
         expect(STATE.servedKw).toBeGreaterThan(0);
+    });
+});
+
+// Task 2 review: demolishBuilding had no awareness of STATE.maintenance —
+// open a window on a PDU, demolish it, and tickMaintenance counted the
+// orphaned order down to "done" on gear that no longer exists. A refund AND
+// a free completed work order, on a level whose objective is literally
+// maintenance_without_loss.
+describe("demolishing a building cannot complete its own work order", () => {
+    it("misses a PENDING order the moment its building is demolished", () => {
+        const { p } = room();
+        initMaintenance([{ target: 2, durationSec: 20, bySec: 90 }], STATE.buildings);
+        demolishBuilding(p);
+        expect(STATE.maintenance.orders[0].state).toBe("missed");
+    });
+
+    it("misses an ACTIVE order too, and tickMaintenance never resurrects it into 'done'", () => {
+        const { p } = room();
+        initMaintenance([{ target: 2, durationSec: 20, bySec: 90 }], STATE.buildings);
+        expect(openServiceWindow(p)).toBe(true);
+        demolishBuilding(p);
+        expect(STATE.maintenance.orders[0].state).toBe("missed");
+        run(25); // well past durationSec — the old bug ran the countdown to "done" here
+        expect(STATE.maintenance.orders[0].state).toBe("missed");
+    });
+
+    it("leaves an order targeting OTHER gear alone", () => {
+        const { p, x } = room();
+        initMaintenance([{ target: 1, durationSec: 20, bySec: 90 }], STATE.buildings); // targets the transformer, index 1
+        expect(x).toBeTruthy();
+        demolishBuilding(p);
+        expect(STATE.maintenance.orders[0].state).toBe("pending");
+    });
+
+    it("fails the maintenance_without_loss objective — a refund is not a completed work order", () => {
+        const { p } = (() => {
+            const built = room();
+            STATE.campaign = {
+                levelId: "first_watt",
+                objectives: [{ type: "maintenance_without_loss", minServedRatio: 0.9, progress: 0, done: false, failed: false }],
+                bonuses: [], endsAt: 9999, done: null, reason: null,
+            };
+            initMaintenance([{ target: 2, durationSec: 20, bySec: 90 }], STATE.buildings);
+            return built;
+        })();
+        demolishBuilding(p);
+        for (let i = 0; i < 5 / DT; i++) {
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            tickEvents(DT, t); tickDemand(DT, t); resolvePower(DT); tickHeat(DT);
+            tickMaintenance(DT, t); tickCampaign(DT, t);
+        }
+        expect(STATE.campaign.objectives[0].failed).toBe(true);
     });
 });
 

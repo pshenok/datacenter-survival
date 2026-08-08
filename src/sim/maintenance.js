@@ -79,6 +79,20 @@ export function openServiceWindow(building) {
     return true;
 }
 
+// A building's order cannot survive the building. Called by
+// sim/build.js on demolition: without this, tickMaintenance keeps counting
+// an orphaned order down on gear that no longer exists, and a level whose
+// objective is maintenance_without_loss gets credited for work that never
+// happened. Only pending/active orders are touched — "done" and already-
+// "missed" orders are terminal states and stay put.
+export function missOrdersForBuilding(buildingId) {
+    for (const o of STATE.maintenance.orders) {
+        if (o.buildingId === buildingId && (o.state === "pending" || o.state === "active")) {
+            o.state = "missed";
+        }
+    }
+}
+
 export function tickMaintenance(dt, elapsed) {
     if (!Number.isFinite(dt) || dt <= 0) return;
 
