@@ -136,6 +136,16 @@ export function chainAlive(building, byId) {
     let node = building;
     let hops = 0;
     while (node) {
+        // Dead gear (an open breaker OR an open service window) is a dead
+        // root — checked FIRST, before the "grid" branch below, or a SOURCE
+        // that is dead gear (a serviced grid_feed or generator) would return
+        // from inside that branch and never reach this check: only
+        // link/fanout nodes used to be able to trip, so this ordering was
+        // unreachable until out-for-service widened isDeadGear to cover
+        // sources too. Also checked BEFORE the UPS clause below, or a
+        // tripped UPS would still read as live and reintroduce the
+        // starvation bug pinned in tests/integration.test.mjs.
+        if (isDeadGear(node)) return false;
         if (node.parentId === "grid") {
             // During a grid outage EVERY grid feed is a dead root (the
             // window is the truth, not a per-building stamp) — assignment
@@ -145,10 +155,6 @@ export function chainAlive(building, byId) {
             if (node.type === "generator") return node.fuelLiters > 0;
             return !feedIsDark(node);
         }
-        // A tripped breaker is a dead root — checked BEFORE the UPS clause,
-        // or a tripped UPS would still read as live and reintroduce the
-        // starvation bug pinned in tests/integration.test.mjs.
-        if (isDeadGear(node)) return false;
         // A UPS with charge is a live root for assignment purposes: work must
         // keep flowing to its subtree during an upstream blip, or the buffer
         // in sim/power.js has nothing to carry and the blip becomes a blackout.

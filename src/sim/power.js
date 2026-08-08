@@ -149,17 +149,25 @@ function primaryPathDead(b, byId) {
     let node = b;
     let hops = 0;
     while (node) {
+        // Dead gear (an open breaker OR an open service window) anywhere up
+        // the primary path is a dead path — the same rule demand.js
+        // chainAlive follows. Checked BEFORE the "grid" branch below, or a
+        // SOURCE that is dead gear (a serviced grid_feed or generator) would
+        // return from inside that branch and never reach this check at all —
+        // only link/fanout nodes used to be able to trip, so that ordering
+        // was unreachable before out-for-service widened isDeadGear to cover
+        // sources too. Without this the generator's cutover clock resets
+        // every tick while assignment keeps feeding the subtree work nobody
+        // delivers: the assigned-but-never-served starvation the integration
+        // suite exists to prevent — and the canonical case this misses is a
+        // serviced UTILITY FEED, exactly when the standby generator must be
+        // free to pick up.
+        if (isDeadGear(node)) return true;
         if (node.parentId === "grid") {
             if (node.config.chainRole !== "source") return true;
             if (node.type === "generator") return node.fuelLiters <= 0;
             return feedIsDark(node);
         }
-        // An open breaker anywhere up the primary path is a dead path —
-        // the same rule demand.js chainAlive follows. Without this the
-        // generator's cutover clock resets every tick while assignment keeps
-        // feeding the subtree work nobody delivers: the assigned-but-never-
-        // served starvation the integration suite exists to prevent.
-        if (isDeadGear(node)) return true;
         if (node.parentId === null || ++hops > maxHops) return true;
         node = byId.get(node.parentId);
     }

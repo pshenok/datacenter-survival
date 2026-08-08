@@ -338,6 +338,63 @@ describe("the ledger tells the truth about why the room went dark", () => {
     });
 });
 
+// Task 1 review: chainAlive (demand.js) and primaryPathDead (power.js) both
+// walked into the `node.parentId === "grid"` branch and RETURNED FROM INSIDE
+// IT — before ever reaching the isDeadGear(node) check below. A grid_feed or
+// generator out for service therefore still read as a live root even though
+// isDeadGear was written to cover exactly this case. Both walks now check
+// isDeadGear before the "grid" branch; these two tests pin the two proven
+// consequences of the old order.
+describe("dead SOURCES are dead roots too — isDeadGear runs before the grid branch", () => {
+    it("a rack behind a serviced grid feed is not assigned work nobody can serve", () => {
+        const { f, r } = room();
+        initMaintenance([{ target: 0, durationSec: 30, bySec: 90 }], STATE.buildings);
+        run(5);
+        expect(r.powered).toBe(true);
+
+        expect(openServiceWindow(f)).toBe(true);
+        expect(isDeadGear(f)).toBe(true);
+        run(1);
+        // With the old order, chainAlive fell into the "grid" branch, found
+        // chainRole "source", checked feedIsDark (false — no outage) and
+        // returned true — so the rack kept getting assignedKw against a feed
+        // that resolvePower's OWN isDeadGear check (a separate code path,
+        // unaffected by this bug) was already refusing to deliver anything
+        // through. Assigned-but-never-served is the exact starvation
+        // tests/integration.test.mjs exists to prevent.
+        expect(r.assignedKw).toBe(0);
+        expect(STATE.servedKw).toBe(0);
+    });
+
+    it("a standby generator DOES pick up when the feed it backs is out for service, after cutoverSec — the canonical generator run", () => {
+        STATE.demandFixedKw = 12;
+        const feed = place("grid_feed", 2, 5);
+        const xf = place("transformer", 5, 5);
+        const pdu = place("pdu", 8, 5);
+        wireBuildings(feed, xf);
+        wireBuildings(xf, pdu);
+        const racks = [place("rack", 12, 4), place("rack", 12, 6)];
+        racks.forEach((rk) => wireBuildings(pdu, rk));
+        const gen = place("generator", 2, 9);
+        wireBuildings(gen, pdu);          // standby edge onto the bus
+
+        initMaintenance([{ target: 0, durationSec: 9999, bySec: 9999 }], STATE.buildings);
+        run(5);
+        expect(gen.actualKw).toBe(0);     // idle while the utility feed is fine
+
+        expect(openServiceWindow(feed)).toBe(true);
+        run(CONFIG.buildings.generator.cutoverSec + 4);
+        // With the old order, primaryPathDead fell into the "grid" branch for
+        // the feed, checked feedIsDark (false) and returned false — "path is
+        // alive" — so the transfer switch never started its cutover clock. A
+        // standby generator refusing to cover a utility feed taken out for
+        // planned service is the single most canonical real generator run
+        // there is.
+        expect(gen.actualKw).toBeGreaterThan(0);
+        expect(STATE.servedKw).toBeGreaterThan(0);
+    });
+});
+
 describe("the objective can fail a level, which nothing else in the engine does", () => {
     // tickCampaign no-ops on levelId === null (that's the documented survival/
     // sandbox sentinel in core/state.js) so a synthetic objective test needs a
