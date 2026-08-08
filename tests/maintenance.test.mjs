@@ -16,6 +16,7 @@ import {
     initMaintenance, tickMaintenance, openServiceWindow,
     pendingOrderFor, activeOrderCount,
 } from "../src/sim/maintenance.js";
+import { tickCampaign, startLevelState, levelCfg } from "../src/campaign/campaign.js";
 
 const DT = 0.05;
 
@@ -334,5 +335,81 @@ describe("the ledger tells the truth about why the room went dark", () => {
         expect(resetBreaker(p)).toBe(true);
         expect(openServiceWindow(p, STATE.elapsedGameTime)).toBe(true);
         expect(p.outForService).toBe(true);
+    });
+});
+
+describe("the objective can fail a level, which nothing else in the engine does", () => {
+    // tickCampaign no-ops on levelId === null (that's the documented survival/
+    // sandbox sentinel in core/state.js) so a synthetic objective test needs a
+    // REAL level id or the sweep below never runs at all. "first_watt" is
+    // picked only because its script is empty — runScript(cfg, elapsed) is
+    // then a no-op and it cannot inject a brownout/heatwave/outage into a
+    // room this test never asked for.
+    function objRoom(orders, objective) {
+        const built = room();
+        STATE.campaign = {
+            levelId: "first_watt",
+            objectives: [{ ...objective, progress: 0, done: false, failed: false }],
+            bonuses: [], endsAt: 9999, done: null, reason: null,
+        };
+        initMaintenance(orders, STATE.buildings);
+        return built;
+    }
+
+    it("fails the moment an order is missed", () => {
+        objRoom([{ target: 2, durationSec: 10, bySec: 20 }],
+            { type: "maintenance_without_loss", minServedRatio: 0.9 });
+        for (let i = 0; i < 30 / DT; i++) {
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            tickEvents(DT, t); tickDemand(DT, t); resolvePower(DT); tickHeat(DT);
+            tickMaintenance(DT, t); tickCampaign(DT, t);
+        }
+        expect(STATE.campaign.objectives[0].failed).toBe(true);
+    });
+
+    it("fails when load drops while a window is open", () => {
+        const { p } = objRoom([{ target: 2, durationSec: 20, bySec: 90 }],
+            { type: "maintenance_without_loss", minServedRatio: 0.9 });
+        for (let i = 0; i < 10 / DT; i++) {
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            tickEvents(DT, t); tickDemand(DT, t); resolvePower(DT); tickHeat(DT);
+            tickMaintenance(DT, t); tickCampaign(DT, t);
+        }
+        expect(STATE.campaign.objectives[0].failed).toBe(false);
+        openServiceWindow(p, STATE.elapsedGameTime);
+        for (let i = 0; i < 10 / DT; i++) {
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            tickEvents(DT, t); tickDemand(DT, t); resolvePower(DT); tickHeat(DT);
+            tickMaintenance(DT, t); tickCampaign(DT, t);
+        }
+        expect(STATE.campaign.objectives[0].failed).toBe(true);
+    });
+
+    it("ignores a load dip while NO window is open — it judges the work, not the weather", () => {
+        const { p } = objRoom([{ target: 2, durationSec: 10, bySec: 900 }],
+            { type: "maintenance_without_loss", minServedRatio: 0.9 });
+        p.tripped = true;                       // a fault, not planned work
+        for (let i = 0; i < 20 / DT; i++) {
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            tickEvents(DT, t); tickDemand(DT, t); resolvePower(DT); tickHeat(DT);
+            tickMaintenance(DT, t); tickCampaign(DT, t);
+        }
+        expect(STATE.campaign.objectives[0].failed).toBe(false);
+    });
+
+    it("is inert for a level that declares no orders — an empty work list can never win or lose it", () => {
+        objRoom([], { type: "maintenance_without_loss", minServedRatio: 0.9 });
+        for (let i = 0; i < 30 / DT; i++) {
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            tickEvents(DT, t); tickDemand(DT, t); resolvePower(DT); tickHeat(DT);
+            tickMaintenance(DT, t); tickCampaign(DT, t);
+        }
+        expect(STATE.campaign.objectives[0].done).toBe(false);
+        expect(STATE.campaign.objectives[0].failed).toBe(false);
     });
 });

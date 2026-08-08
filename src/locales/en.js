@@ -208,6 +208,7 @@ export const EN_TRANSLATIONS = {
     "fail_money": "The facility ran out of money.",
     "fail_bankrupt": "Bankrupt — the power bills won.",
     "fail_reputation": "SLA reputation hit zero — every client walked.",
+    "fail_maintenance": "The work did not get done — or it did, and the load went with it. Tier III is not about surviving surprises; it is about being able to service any element without dropping a watt.",
     "lv_first_watt_tip": "That chain is the real one: utility → transformer → UPS → PDU → rack. Every datacenter you have ever deployed to has that exact spine, and every link on it is rated in kW.",
     "lv_first_watt_tip_fail": "Power does not flow through proximity — only through wires. Use the Wire tool and click the SOURCE first, then what it feeds: Grid Feed → Transformer → UPS → PDU → Rack.",
     "lv_hot_aisle_tip": "This is why colocation is priced per kW, not per rack unit: the constraint on a machine hall is the heat you can remove, not the space you can fill.",

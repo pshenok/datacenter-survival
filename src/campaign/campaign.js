@@ -6,7 +6,10 @@
 // STATE fields owned by this module:
 //   campaign      — { levelId, objectives, endsAt, done, outage }
 //     levelId     null = survival/sandbox; every hook here is then a no-op
-//     objectives  [{ type, target, holdSec?, value?, progress, done }]
+//     objectives  [{ type, target, holdSec?, value?, progress, done, failed }]
+//                 failed is true only for "maintenance_without_loss" — the
+//                 one objective type that can end a level on its own (see
+//                 tickCampaign's objective sweep)
 //     endsAt      game time of the level's time limit
 //     done        null while running; "won" | "failed" once resolved (the
 //                 UI reacts to the transition, game.js freezes time)
@@ -26,6 +29,7 @@
 
 import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
+import { activeOrderCount, initMaintenance } from "../sim/maintenance.js";
 
 const BILLING_HOUR_SEC = 60;    // same scale as sim/demand.js
 const PUE_MIN_IT_KW = 0.05;     // below this, PUE is undefined (HUD rule)
@@ -123,11 +127,14 @@ export function startLevelState(id) {
     // Switching it on globally would re-price all twelve existing levels and
     // quietly invalidate the machine-played pairs that make them lessons.
     STATE.tariff.cycleOn = cfg.tariffCycle === true;
+    // Work orders resolve against the room the level hands over, so this must
+    // run AFTER applyPreBuilt. game.js calls it; see onLevelStart.
+    STATE.maintenance = { orders: [] };
 
     STATE.campaign = {
         levelId: id,
-        objectives: cfg.objectives.map((o) => ({ ...o, progress: 0, done: false })),
-        bonuses: (cfg.bonuses || []).map((o) => ({ ...o, progress: 0, done: false })),
+        objectives: cfg.objectives.map((o) => ({ ...o, progress: 0, done: false, failed: false })),
+        bonuses: (cfg.bonuses || []).map((o) => ({ ...o, progress: 0, done: false, failed: false })),
         endsAt: cfg.timeLimitSec,
         done: null,
         reason: null,
@@ -228,6 +235,29 @@ function evaluateObjective(o, dt, elapsed) {
             if (o.progress >= o.holdSec) o.done = true;
             break;
         }
+        // The Tier III objective, and the only one that can FAIL a level
+        // rather than merely not complete. Two ways to lose it, matching the
+        // two ways a facility fails the standard: the work never happened,
+        // or the work dropped the load.
+        case "maintenance_without_loss": {
+            const orders = STATE.maintenance.orders;
+            if (orders.some((m) => m.state === "missed")) {
+                o.failed = true;
+                break;
+            }
+            // Judged ONLY while a window is open. A dip caused by a heatwave
+            // or a trip is a different lesson with its own objective; this
+            // one is about whether the work could be done safely.
+            if (activeOrderCount() > 0 && STATE.demandKw > 0) {
+                const ratio = STATE.servedKw / STATE.demandKw;
+                if (ratio < o.minServedRatio) {
+                    o.failed = true;
+                    break;
+                }
+            }
+            if (orders.length > 0 && orders.every((m) => m.state === "done")) o.done = true;
+            break;
+        }
     }
 }
 
@@ -257,6 +287,14 @@ export function tickCampaign(dt, elapsed) {
     let allDone = true;
     for (const o of camp.objectives) {
         if (!o.done) evaluateObjective(o, dt, elapsed);
+        // An objective that can FAIL is new: every other type can only fail
+        // to complete, and the level ends on the clock or a floor. This ends
+        // it immediately, because "you missed the maintenance window" is a
+        // verdict, not a shortfall you can still recover from.
+        if (o.failed) {
+            resolve(camp, "failed", "fail_maintenance");
+            return;
+        }
         if (!o.done) allDone = false;
     }
     // Bonuses are scored on the same facts but excluded from allDone —
@@ -292,4 +330,11 @@ function resolve(camp, verdict, reason = null) {
     STATE.gridOutage.active = false;
     STATE.tariff.active = false;
     STATE.tariff.multiplier = 1;
+}
+
+// Work orders index into the room applyPreBuilt just built, so this runs
+// after it, not inside startLevelState.
+export function startLevelMaintenance(id, built) {
+    const cfg = levelCfg(id);
+    initMaintenance(cfg && cfg.maintenance ? cfg.maintenance.orders : [], built);
 }
