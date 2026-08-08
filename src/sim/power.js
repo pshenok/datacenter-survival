@@ -383,7 +383,12 @@ export function resolvePower(dt) {
                 const gridLeft = Math.max(0, outKw - served - (outBattKw - battOut));
                 let chargeKw = 0;
 
-                if (STATE.peakShave.on && b.bufferLeft > 0 && served > battOut) {
+                // isDeadGear is re-checked here rather than left to the sweep
+                // below: that sweep zeroes what the UPS DELIVERS, but by then
+                // the battery has already been spent and the meter already
+                // credited. A UPS behind its own open breaker is not shaving
+                // — it is isolated, and energy it "spends" reaches nothing.
+                if (STATE.peakShave.on && b.bufferLeft > 0 && served > battOut && !isDeadGear(b)) {
                     // PEAK SHAVING. Displace the GRID-sourced part of what
                     // this UPS is already delivering — same kW to the racks,
                     // bought from the battery instead of the meter — and

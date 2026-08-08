@@ -392,6 +392,26 @@ describe("batteryKw is credited ONCE per delivered kW, not once per UPS", () => 
         expect(upsA.bufferLeft).toBeLessThan(U.bufferSec);
         expect(upsB.bufferLeft).toBe(U.bufferSec);
     });
+
+    it("a TRIPPED UPS credits nothing and spends nothing — it is isolated, not shaving", () => {
+        // The kW is banked where it is consumed, so gear that delivers
+        // nothing can never bank anything. The dead-gear sweep runs AFTER
+        // the UPS clause (so a tripped UPS cannot self-grant either), which
+        // means the clause has to decline on its own or the battery is gone
+        // and the meter credited before the sweep ever zeroes the delivery.
+        const { ups, pdu } = chain();
+        const rack = place("rack");
+        rack.assignedKw = 4;
+        wireBuildings(pdu, rack);
+        STATE.peakShave.on = true;
+        ups.tripped = true;
+        resolvePower(1);
+        expect(rack.actualKw).toBe(0);
+        expect(rack.powered).toBe(false);
+        expect(STATE.batteryKw).toBe(0);
+        expect(ups.bufferLeft).toBe(U.bufferSec);
+        expect(ups.bufferOwedKws).toBe(0);
+    });
 });
 
 describe("sim/demand.js bills grid-sourced draw only", () => {
