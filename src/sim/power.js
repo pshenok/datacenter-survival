@@ -9,9 +9,13 @@
 //                       buffer this tick (peak shaving) rather than the
 //                       grid. sim/demand.js bills (totalDrawKw - batteryKw);
 //                       totalDrawKw/PUE do not change meaning — see below.
-//                       Accumulated at the LOADS that consumed it, never
-//                       once per UPS traversed: ups -> ups is a legal edge,
-//                       and crediting per UPS bills a two-deep chain twice.
+//                       Banked at the LOADS that consumed it, never once per
+//                       UPS traversed: ups -> ups is a legal edge, and
+//                       crediting per UPS bills a two-deep chain twice. Held
+//                       per node and summed at the end of the tick, never
+//                       added to a running total, because the standby wave
+//                       resolves a subtree TWICE and the second resolution
+//                       has to replace the first — see deliver().
 // Building fields owned by this module (declared in entities/Building.js):
 //   parentId, childIds — power topology, via wireBuildings()/unwire()
 //   actualKw, powered  — per-tick resolution results (links carry, loads draw)
@@ -244,10 +248,21 @@ export function resolvePower(dt) {
         b.clippedKw = 0;
     }
 
-    // Peak shaving (batterySum) and UPS recharge draw (rechargeSum), summed
-    // across every UPS as deliver() visits it. See the header and
-    // CONFIG.buildings.ups for what each becomes at the bottom of this tick.
-    let batterySum = 0;
+    // Peak shaving (battCredit) and UPS recharge draw (rechargeSum), gathered
+    // as deliver() visits each node. See the header and CONFIG.buildings.ups
+    // for what each becomes at the bottom of this tick.
+    //
+    // THE BATTERY CREDIT IS BANKED PER NODE, NOT ADDED TO A RUNNING SUM.
+    // A node can be resolved twice in one tick: the standby wave below rolls
+    // a re-delivered subtree's UPS buffers back to bufSnap and delivers it
+    // again off the generator. Every other per-node result of deliver() —
+    // actualKw, powered, bufferLeft — is an ASSIGNMENT, so the second pass
+    // simply replaces the first; a running credit was the one number that
+    // ADDED, and it kept the first pass's kW on the meter after the charge
+    // behind them had been handed back to the battery. Keyed by the node that
+    // consumed the kW (a load, or a UPS's own charger), so re-delivering a
+    // subtree overwrites exactly what it re-resolves and nothing else.
+    const battCredit = new Map();
     let rechargeSum = 0;
 
     // 1) Sanitized load requests.
@@ -341,14 +356,17 @@ export function resolvePower(dt) {
     function deliver(b, live, grantKw, grantBattKw = 0) {
         if (visited.has(b.id)) return;
         visited.add(b.id);
+        // Whatever this node banked on an earlier pass is void the moment it
+        // is resolved again: this pass's grant is the truth.
+        battCredit.delete(b.id);
         const pull = pullOf(b);
 
         if (b.config.chainRole === "load") {
             const got = live ? Math.min(grantKw, pull) : 0;
             b.actualKw = got;
             b.powered = live && (got > 0 || pull === 0);
-            // THE ONE PLACE batterySum grows.
-            if (got > 0 && grantBattKw > 0) batterySum += Math.min(got, grantBattKw);
+            // THE ONE PLACE a load banks battery credit.
+            if (got > 0 && grantBattKw > 0) battCredit.set(b.id, Math.min(got, grantBattKw));
             return;
         }
 
@@ -428,7 +446,7 @@ export function resolvePower(dt) {
                         // took off an upstream battery is banked here, where
                         // it was consumed — the same rule the racks follow.
                         if (battSpare > 0 && chargeKw > 0) {
-                            batterySum += Math.min(chargeKw, battSpare * (chargeKw / spare));
+                            battCredit.set(b.id, Math.min(chargeKw, battSpare * (chargeKw / spare)));
                         }
                         b.upsMode = "charging";
                     } else {
@@ -692,6 +710,12 @@ export function resolvePower(dt) {
     // from this in src/ui/hud.js) legitimately rises while a UPS recharges:
     // that overhead is real, same as a CRAC's idle draw.
     STATE.totalDrawKw = itKw + coolKw + rechargeSum;
-    // What sim/demand.js subtracts before billing — see the header.
+    // What sim/demand.js subtracts before billing — see the header. Summed
+    // here, once, over the LAST resolution of every node that consumed
+    // battery kW this tick: a subtree the standby wave re-delivered counts
+    // as the generator served it, not as the battery served it and then the
+    // generator served it again.
+    let batterySum = 0;
+    for (const kw of battCredit.values()) batterySum += kw;
     STATE.batteryKw = batterySum;
 }
