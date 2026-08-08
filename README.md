@@ -41,7 +41,7 @@ the run in dollars — `Where the $65 went: AT CAPACITY 61%, TOO HOT 20%…`.
 
 ## The campaign
 
-Twelve levels in four chapters, each teaching one mechanic and each proven —
+Thirteen levels in five chapters, each teaching one mechanic and each proven —
 by machine-played tests — to be **winnable with that mechanic and losable
 without it**.
 
@@ -57,6 +57,10 @@ without it**.
 - **Chapter 4 · Scale** — one chiller plant feeding many cooling
   heads: cheaper than cooling everywhere at once, right up until the day the
   plant stops and every head on it stops together.
+- **Chapter 5 · Serviceable** — scheduled work orders with a deadline: Tier
+  III isn't "has a backup", it's concurrent maintainability — any element can
+  be pulled for planned work while the load keeps running, which is a
+  statement about spare capacity, not about spare parts.
 
 Optional bonus objectives sit on a different axis than the level's own goal
 — serve *through* the sag, or bridge three blackouts and still finish with
@@ -100,7 +104,7 @@ real playthrough.
 
 ## Status
 
-Twelve campaign levels across four chapters, nine buildings, 259 tests.
+Thirteen campaign levels across five chapters, nine buildings, 304 tests.
 Simulation: wired power with inverse-time breakers, a diffusing heat field
 with part-load cooling, a shared chilled-water loop, UPS buffers, standby
 generators with fuel, grid sags, per-substation outages, peak tariffs,

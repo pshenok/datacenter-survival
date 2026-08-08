@@ -20,6 +20,7 @@ elapsedGameTime += dt          (skipped while the tutorial is active)
   → resolvePower               the wired chain resolves
   → tickHeat                   heat responds to actual draw
   → tickContracts              judged on THIS tick's facts
+  → tickMaintenance            work-order windows and deadlines
   → tickCampaign               scripted events + objectives, judged last
 ```
 
@@ -40,13 +41,25 @@ values breaks the campaign objective bounds and the attribution conservation
 identity.
 
 **`chainAlive()` is topology-only.** It walks `parentId`s and checks
-`parentId === "grid"`, `chainRole`, `tripped`, UPS `bufferLeft` and
+`isDeadGear`, `parentId === "grid"`, `chainRole`, UPS `bufferLeft` and
 `standbyParentId` — never last tick's `powered` flag. Assignment runs *before*
 power resolution, so a `powered`-based check deadlocks a freshly wired rack
 forever and starves a UPS subtree so its buffer never carries anything. Both
 are shipped bugs that `tests/integration.test.mjs` exists to prevent.
 
-The `tripped` check sits on **opposite sides of the UPS clause** in the two
+`isDeadGear` is checked FIRST, before the `"grid"` branch. A source (a
+`grid_feed` or a `generator`, the only nodes with `parentId === "grid"`) is
+dead gear too the moment it is tripped or out for service, and only a node
+that passes the `isDeadGear` check reaches the branch that applies the
+generator's `fuelLiters` rule or `feedIsDark`. Before scheduled maintenance
+widened `isDeadGear` past breakers, only `link`/`fanout` roles could ever
+trip, so a dead SOURCE reaching this function was unreachable and the
+ordering did not matter; out-for-service made it reachable, and a fix moved
+the check ahead of the `"grid"` branch in both `chainAlive` here and
+`primaryPathDead` in `power.js` — a serviced grid feed or generator now reads
+as a dead root exactly like a tripped one.
+
+The `isDeadGear` check sits on **opposite sides of the UPS clause** in the two
 modules, and both are deliberate:
 
 - `demand.js` — *before* the UPS clause: "or a tripped UPS would still read as
