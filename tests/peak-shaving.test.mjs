@@ -812,3 +812,167 @@ describe("measured in-game: one full discharge at day x peak, recharged at night
         expect(samples).toBe(40);
     });
 });
+
+// Three bugs shipped on this branch and all three were the SAME bug: the
+// credit on the meter and the energy that left the battery disagreed, and
+// nothing in this suite ever put the two numbers side by side. The 457% pump
+// credited kW the battery did not hold; the chained-UPS double count credited
+// the same kW at every UPS it passed through; the standby wave rolled a
+// re-delivered subtree's buffers back to the snapshot and kept the credit
+// anyway. Each was found by a person reading the code, one at a time, after
+// it had already shipped. This is that reading, done every tick.
+describe("THE LEDGER: a credited kW.s came out of a battery, or it did not happen", () => {
+    // Every UPS keeps two independent books on the same physical event: the
+    // CHARGE it gave up (bufferLeft, denominated in seconds of capacityKw)
+    // and the DEBT it took on (bufferOwedKws, what the charger has to buy
+    // back). Shaving moves them in lockstep. The outage bridge deliberately
+    // spends a second of buffer per second whatever it is carrying, so there
+    // the seconds read high and the debt is the honest number. The TIGHTER of
+    // the two is therefore the most energy that can possibly have left that
+    // battery this tick — and a bug that inflates one book cannot hide behind
+    // the other.
+    function books() {
+        const m = new Map();
+        for (const b of STATE.buildings) {
+            if (b.type === "ups") m.set(b.id, { sec: b.bufferLeft, owed: b.bufferOwedKws });
+        }
+        return m;
+    }
+
+    function energyOutKws(before) {
+        let out = 0;
+        for (const b of STATE.buildings) {
+            if (b.type !== "ups") continue;
+            const was = before.get(b.id);
+            const byCharge = (was.sec - b.bufferLeft) * (b.config.capacityKw || 0);
+            const byDebt = b.bufferOwedKws - was.owed;
+            out += Math.max(0, Math.min(byCharge, byDebt));
+        }
+        return out;
+    }
+
+    // One facility with every hazard in it at once, because each of the three
+    // bugs needed a DIFFERENT one and a suite of single-purpose rooms is how
+    // they kept getting through:
+    //   grid_feed -> ups -> ups -> pdu -> 2 racks + a CRAC   chained batteries
+    //   generator -> pdu -> 2 racks                          never buffered
+    //   generator --standby--> the first UPS                 the transfer switch
+    //   grid_feed -> pdu -> 3 racks                          18 kW on a 16 kW bus
+    //   grid_feed -> pdu -> a CRAC                           still billed after it opens
+    function facility() {
+        STATE.demandFixedKw = 42;                      // every rack at its full 6 kW
+        const feedA = place("grid_feed", 2, 5);
+        const upsA = place("ups", 5, 5);
+        const upsB = place("ups", 8, 5);
+        const pduA = place("pdu", 11, 5);
+        wireBuildings(feedA, upsA);
+        wireBuildings(upsA, upsB);                     // ups -> ups is a legal edge
+        wireBuildings(upsB, pduA);
+        for (let i = 0; i < 2; i++) wireBuildings(pduA, place("rack", 14, 5 + i));
+        const cracA = place("crac", 14, 8);            // a buffered load that is not a rack
+        cracA.duty = 0.5;
+        wireBuildings(pduA, cracA);
+
+        const gen = place("generator", 2, 12);
+        const pduG = place("pdu", 11, 12);
+        wireBuildings(gen, pduG);                      // the generator's own room
+        for (let i = 0; i < 2; i++) wireBuildings(pduG, place("rack", 14, 12 + i));
+        wireBuildings(gen, upsA);                      // ...and standby for the UPS chain
+
+        const feedB = place("grid_feed", 2, 20);
+        const pduB = place("pdu", 11, 20);
+        wireBuildings(feedB, pduB);
+        for (let i = 0; i < 3; i++) wireBuildings(pduB, place("rack", 14, 20 + i));
+        const pduC = place("pdu", 11, 25);
+        wireBuildings(feedB, pduC);
+        const cracB = place("crac", 14, 25);
+        cracB.duty = 0.5;
+        wireBuildings(pduC, cracB);
+        return { upsA, upsB, gen, pduB };
+    }
+
+    // The player's hand on the toggle and the city's hand on the meter. The
+    // stretches are long enough to empty the battery and land in the
+    // charge-a-tick/spend-a-tick regime, which is where an uncapped grant
+    // pays out most, and the last stretch flips the button every two seconds.
+    function script(t) {
+        STATE.peakShave.on = t < 40
+            || (t >= 55 && t < 75)
+            || (t >= 95 && t < 160)
+            || (t >= 160 && Math.floor(t / 2) % 2 === 0);
+        STATE.brownout.active = t >= 55 && t < 75;
+        STATE.brownout.factor = CONFIG.events.brownout.capacityFactor;
+        STATE.gridOutage.active = t >= 95 && t < 130;
+    }
+
+    it("holds on EVERY tick of a run with chained UPSes, a cutover, an outage, a sag, a trip and the toggle flipping", () => {
+        const { upsA, upsB, gen, pduB } = facility();
+        const seen = {
+            shaving: 0, bridging: 0, charging: 0, chained: 0, onGenerator: 0,
+            sagging: 0, flips: 0, creditedKws: 0, outKws: 0, minBilledKw: Infinity,
+        };
+        let broke = null;
+        let was = false;
+
+        for (let i = 0; i < Math.round(200 / DT); i++) {
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            script(t);
+            if (STATE.peakShave.on !== was) seen.flips++;
+            was = STATE.peakShave.on;
+            tickEvents(DT, t);
+            tickDemand(DT, t);
+            const before = books();
+            resolvePower(DT);
+
+            const creditedKws = STATE.batteryKw * DT;
+            const outKws = energyOutKws(before);
+            // THE INVARIANT. Not "close to", not "on average over the run" —
+            // the meter may never, on any single tick, be credited for a
+            // kW.s more than the batteries actually gave up.
+            if (creditedKws > outKws + 1e-9 && broke === null) {
+                broke = {
+                    atSec: Number(t.toFixed(2)),
+                    creditedKws,
+                    leftABatteryKws: outKws,
+                    batteryKw: STATE.batteryKw,
+                    totalDrawKw: STATE.totalDrawKw,
+                    upsA: upsA.upsMode,
+                    upsB: upsB.upsMode,
+                };
+            }
+
+            seen.creditedKws += creditedKws;
+            seen.outKws += outKws;
+            seen.minBilledKw = Math.min(seen.minBilledKw, STATE.totalDrawKw - STATE.batteryKw);
+            if (upsA.upsMode === "shaving") {
+                seen.shaving++;
+                if (upsB.actualKw > 0) seen.chained++;
+                if (STATE.brownout.active) seen.sagging++;
+            }
+            if (upsA.upsMode === "bridging") seen.bridging++;
+            if (upsA.upsMode === "charging") seen.charging++;
+            if (STATE.gridOutage.active && upsA.powered && gen.actualKw > 0) seen.onGenerator++;
+        }
+
+        expect(broke).toBe(null);
+
+        // ...and the run really did put the machine through all of it, so a
+        // green result cannot mean "nothing happened". Each of these is the
+        // condition one of the three bugs needed.
+        expect(seen.shaving).toBeGreaterThan(200);      // the mechanic ran, at length
+        expect(seen.chained).toBeGreaterThan(200);      // through a UPS behind a UPS
+        expect(seen.bridging).toBeGreaterThan(0);       // the outage bridge, before cutover
+        expect(seen.charging).toBeGreaterThan(200);     // and bought it all back
+        expect(seen.onGenerator).toBeGreaterThan(0);    // the standby wave re-delivered it
+        expect(seen.sagging).toBeGreaterThan(0);        // shaved through a sag
+        expect(seen.flips).toBeGreaterThan(10);         // the button, worked
+        expect(pduB.tripped).toBe(true);                // a breaker opened mid-run
+        expect(seen.outKws).toBeGreaterThan(FULL_KWS);  // more than a battery-full cycled
+        expect(seen.creditedKws).toBeGreaterThan(FULL_KWS);
+        // The un-buffered half of the room is never zero, so an inflated
+        // credit shows up as an under-bill instead of vanishing into
+        // demand.js's Math.max(0, ...) clamp.
+        expect(seen.minBilledKw).toBeGreaterThan(0);
+    });
+});
