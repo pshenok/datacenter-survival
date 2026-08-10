@@ -676,7 +676,8 @@ export function resolvePower(dt) {
             let node = byId.get(c.parentId);
             let hops = 0;
             while (node && ++hops <= STATE.buildings.length) {
-                if (node.type === "ups" && !redelivered.has(node.id)
+                if (node.type === "ups" && node.upsMode === "bridging"
+                    && !redelivered.has(node.id)
                     && !carriesOutsideRedelivered(node)) {
                     node.bufferLeft = bufSnap.get(node.id).sec;
                     node.bufferOwedKws = bufSnap.get(node.id).owed;
