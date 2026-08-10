@@ -104,7 +104,7 @@ real playthrough.
 
 ## Status
 
-Thirteen campaign levels across five chapters, nine buildings, 341 tests.
+Thirteen campaign levels across five chapters, nine buildings, 342 tests.
 Simulation: wired power with inverse-time breakers, a diffusing heat field
 with part-load cooling, a shared chilled-water loop, UPS buffers, standby
 generators with fuel, grid sags, per-substation outages, time-of-use and peak

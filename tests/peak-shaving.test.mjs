@@ -839,16 +839,77 @@ describe("THE LEDGER: a credited kW.s came out of a battery, or it did not happe
         return m;
     }
 
+    // ...and only the UPSes that actually SHAVED count toward what may be
+    // credited. Every credited kW traces to the shaving branch in
+    // sim/power.js — a root grants grantBattKw 0, the bridge sets outBattKw
+    // to 0 explicitly, and nothing else adds — so a UPS in any other mode
+    // contributes energy the meter was never credited for. Summing all of
+    // them instead leaves STANDING SLACK: a partially-transferred outage
+    // bridge books its debt against the pass-1 subtree pull, and measured on
+    // this exact run that slack is 321 kW.s spread over 318 ticks, enough to
+    // hide an injected 25% credit inflation on 318 of the 2900 credited ticks
+    // — the whole-facility pool caught it on 2582, this pool on all 2900.
+    //
+    // (Attributing the credit itself back to the UPS it came out of would be
+    // tighter still, and is NOT free: a load's credit is a proportional clip
+    // of a battery share that may be mixed from two UPSes in series, so it
+    // would mean threading originating ids through grantBattKw in
+    // sim/power.js — production complexity for a test's benefit, in the one
+    // function on this branch that has now been wrong four times. Filtering
+    // by mode removes all of the masking that was actually measurable.)
     function energyOutKws(before) {
         let out = 0;
         for (const b of STATE.buildings) {
-            if (b.type !== "ups") continue;
+            if (b.type !== "ups" || b.upsMode !== "shaving") continue;
             const was = before.get(b.id);
             const byCharge = (was.sec - b.bufferLeft) * (b.config.capacityKw || 0);
             const byDebt = b.bufferOwedKws - was.owed;
             out += Math.max(0, Math.min(byCharge, byDebt));
         }
         return out;
+    }
+
+    // The same two books read the other way: what LANDED in a battery this
+    // tick. Same argument for taking the tighter of the two — the charger
+    // moves seconds and debt from one `restored` number, so they agree, and a
+    // bug that inflates either one alone cannot hide behind the other.
+    function energyInKws(before) {
+        let inn = 0;
+        for (const b of STATE.buildings) {
+            if (b.type !== "ups") continue;
+            const was = before.get(b.id);
+            const byCharge = (b.bufferLeft - was.sec) * (b.config.capacityKw || 0);
+            const byDebt = was.owed - b.bufferOwedKws;
+            inn += Math.max(0, Math.min(byCharge, byDebt));
+        }
+        return inn;
+    }
+
+    // What the CHARGERS put on the meter this tick. sim/power.js builds
+    // totalDrawKw as racks + cooling + charger draw, so subtracting every
+    // load's actualKw leaves exactly the charger term — no test-only field,
+    // and it reads the same number a broken implementation would publish.
+    function billedChargerKw() {
+        let loads = 0;
+        for (const b of STATE.buildings) {
+            if (b.config.chainRole === "load") loads += b.actualKw;
+        }
+        return STATE.totalDrawKw - loads;
+    }
+
+    // The nameplate-refill fallback in sim/power.js (`owed = deficitSec *
+    // cap` when a UPS has seconds missing but no debt) is unreachable from
+    // play — every second that leaves a battery books its energy on the way
+    // out — and the two books only agree while that stays true. Counted so
+    // that if it ever becomes reachable this test says WHICH assumption
+    // broke instead of going red somewhere confusing.
+    function nameplateRefillsPending() {
+        let n = 0;
+        for (const b of STATE.buildings) {
+            if (b.type !== "ups") continue;
+            if (b.bufferOwedKws === 0 && b.bufferLeft < (b.config.bufferSec || 0)) n++;
+        }
+        return n;
     }
 
     // One facility with every hazard in it at once, because each of the three
@@ -859,8 +920,13 @@ describe("THE LEDGER: a credited kW.s came out of a battery, or it did not happe
     //   generator --standby--> the first UPS                 the transfer switch
     //   grid_feed -> pdu -> 3 racks                          18 kW on a 16 kW bus
     //   grid_feed -> pdu -> a CRAC                           still billed after it opens
+    //   grid_feed -> ups -> transformer -> pdu -> 2 racks    the ANCESTOR case:
+    //   generator --standby--> that pdu                      a UPS on LIVE power
+    //                                                        above a serviced link
+    //   grid_feed -> ups -> ups -> pdu -> 2 racks            a CHARGER inside a
+    //   generator --standby--> the upper ups                 re-delivered subtree
     function facility() {
-        STATE.demandFixedKw = 42;                      // every rack at its full 6 kW
+        STATE.demandFixedKw = 66;                      // every rack at its full 6 kW
         const feedA = place("grid_feed", 2, 5);
         const upsA = place("ups", 5, 5);
         const upsB = place("ups", 8, 5);
@@ -888,25 +954,81 @@ describe("THE LEDGER: a credited kW.s came out of a battery, or it did not happe
         const cracB = place("crac", 14, 25);
         cracB.duty = 0.5;
         wireBuildings(pduC, cracB);
-        return { upsA, upsB, gen, pduB };
+
+        // The ancestor case. upsC never loses its own feed — the death is
+        // BELOW it, a transformer that goes out for service — so it sits on
+        // live utility power and legitimately charges back what the toggle
+        // spent, while a second generator carries the subtree underneath.
+        // That is a UPS "above a standby attach point on a dead primary path"
+        // that was never bridging, and rolling its charge back is a recharge
+        // billed and never delivered.
+        const feedC = place("grid_feed", 18, 5);
+        const upsC = place("ups", 21, 5);
+        const trC = place("transformer", 24, 5);
+        const pduD = place("pdu", 27, 5);
+        wireBuildings(feedC, upsC);
+        wireBuildings(upsC, trC);
+        wireBuildings(trC, pduD);
+        for (let i = 0; i < 2; i++) wireBuildings(pduD, place("rack", 27, 8 + i));
+        const gen2 = place("generator", 18, 12);
+        wireBuildings(gen2, pduD);                     // standby: pduD is already fed
+
+        // A charger INSIDE a re-delivered subtree. The wave rolls upsE's
+        // buffer back to the snapshot and resolves it a second time, so a
+        // charger that ran once gets billed once per pass unless the draw is
+        // banked per node. It only lines up when upsD is STILL BRIDGING as
+        // the cutover completes — that is what keeps upsE live on pass 1 —
+        // which is why this branch gets its own generator with headroom and
+        // its own outage before the one that matters: a bridge books far less
+        // debt per second of buffer than shaving does, so a room that has
+        // already been through a blackout recharges its SECONDS fast enough
+        // to still be carrying when the transfer switch lands.
+        const feedD = place("grid_feed", 18, 18);
+        const upsD = place("ups", 21, 18);
+        const upsE = place("ups", 24, 18);
+        const pduE = place("pdu", 27, 18);
+        wireBuildings(feedD, upsD);
+        wireBuildings(upsD, upsE);                     // ups -> ups again
+        wireBuildings(upsE, pduE);
+        for (let i = 0; i < 2; i++) wireBuildings(pduE, place("rack", 27, 21 + i));
+        const gen3 = place("generator", 18, 25);       // wired standby mid-run
+        return { upsA, upsB, upsC, upsD, upsE, gen, gen2, gen3, pduB, trC, armed: false };
     }
 
     // The player's hand on the toggle and the city's hand on the meter. The
     // stretches are long enough to empty the battery and land in the
     // charge-a-tick/spend-a-tick regime, which is where an uncapped grant
     // pays out most, and the last stretch flips the button every two seconds.
-    function script(t) {
+    function script(t, room) {
         STATE.peakShave.on = t < 40
             || (t >= 55 && t < 75)
             || (t >= 95 && t < 160)
             || (t >= 160 && Math.floor(t / 2) % 2 === 0);
         STATE.brownout.active = t >= 55 && t < 75;
         STATE.brownout.factor = CONFIG.events.brownout.capacityFactor;
-        STATE.gridOutage.active = t >= 95 && t < 130;
+        // Three blackouts, and the two SCOPED ones are the point: a substation
+        // outage takes down half the room, which is the only way to put the
+        // B-side chain through a cutover while the A-side keeps shaving. The
+        // wide one is the original.
+        const wide = t >= 95 && t < 130;
+        const bSide = (t >= 2 && t < 22) || (t >= 48 && t < 55);
+        STATE.gridOutage.active = wide || bSide;
+        STATE.gridOutage.scope = wide ? "all" : "B";
+        // The maintenance window opens AFTER the toggle has emptied upsC, so
+        // the ancestor UPS has a real debt to work down while the generator
+        // below it carries the racks it used to feed.
+        room.trC.outForService = t >= 45;
+        // The player buys the transfer switch after the first blackout, which
+        // is also what starts gen3's cutover clock from full at the second.
+        if (!room.armed && t >= 40) {
+            wireBuildings(room.gen3, room.upsD);
+            room.armed = true;
+        }
     }
 
     it("holds on EVERY tick of a run with chained UPSes, a cutover, an outage, a sag, a trip and the toggle flipping", () => {
-        const { upsA, upsB, gen, pduB } = facility();
+        const room = facility();
+        const { upsA, upsB, gen, pduB } = room;
         const seen = {
             shaving: 0, bridging: 0, charging: 0, chained: 0, onGenerator: 0,
             sagging: 0, flips: 0, creditedKws: 0, outKws: 0, minBilledKw: Infinity,
@@ -917,7 +1039,7 @@ describe("THE LEDGER: a credited kW.s came out of a battery, or it did not happe
         for (let i = 0; i < Math.round(200 / DT); i++) {
             STATE.elapsedGameTime += DT;
             const t = STATE.elapsedGameTime;
-            script(t);
+            script(t, room);
             if (STATE.peakShave.on !== was) seen.flips++;
             was = STATE.peakShave.on;
             tickEvents(DT, t);
@@ -974,5 +1096,91 @@ describe("THE LEDGER: a credited kW.s came out of a battery, or it did not happe
         // credit shows up as an under-bill instead of vanishing into
         // demand.js's Math.max(0, ...) clamp.
         expect(seen.minBilledKw).toBeGreaterThan(0);
+    });
+
+    // THE MIRROR. The assertion above watches only the money going OUT of the
+    // meter, and that is exactly why two more of the same bug lived on this
+    // branch after it was written: both were in the charger, the direction it
+    // never looked. A charger that is billed and does not deliver is the same
+    // lie as a credit that is paid and did not happen — the facility draw
+    // goes up, the bill goes up, PUE goes up, and no battery is any fuller
+    // for it. The two failures found were a running `+=` that let the standby
+    // wave bill a re-delivered UPS's charger twice, and an ancestor-UPS fixup
+    // that rolled a live-fed UPS's charge back every tick while it kept
+    // paying for it. This is the reading the LEDGER should always have had.
+    //
+    // roundTripEff is the whole content of the claim: the charger's draw is
+    // what it BUYS, `restored` is what LANDS, and the loss between them is
+    // the reason leaving the toggle on costs money. Billed draw above
+    // landed/roundTripEff is energy the player paid for that is nowhere.
+    it("THE MIRROR: no charger is billed for a kW.s that never landed in a battery", () => {
+        const room = facility();
+        const { upsA, upsB, upsC, upsD, upsE, gen2, gen3, trC } = room;
+        const seen = {
+            charging: 0, billedKws: 0, landedKws: 0,
+            reDeliveredCharger: 0, ancestorCharger: 0, nameplateRefills: 0,
+        };
+        let broke = null;
+
+        for (let i = 0; i < Math.round(200 / DT); i++) {
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            script(t, room);
+            tickEvents(DT, t);
+            tickDemand(DT, t);
+            const before = books();
+            seen.nameplateRefills += nameplateRefillsPending();
+            resolvePower(DT);
+
+            const billedKws = billedChargerKw() * DT;
+            const landedKws = energyInKws(before);
+            // THE INVARIANT. Every tick, not on average: the meter may never
+            // carry more charger draw than the energy that actually landed in
+            // the batteries can account for, once the round-trip loss is
+            // allowed for.
+            const allowedKws = landedKws / U.roundTripEff;
+            if (billedKws > allowedKws + 1e-9 && broke === null) {
+                broke = {
+                    atSec: Number(t.toFixed(2)),
+                    billedKws,
+                    landedKws,
+                    allowedKws,
+                    billedChargerKw: billedChargerKw(),
+                    totalDrawKw: STATE.totalDrawKw,
+                    upsA: upsA.upsMode, upsB: upsB.upsMode,
+                    upsC: upsC.upsMode, upsD: upsD.upsMode, upsE: upsE.upsMode,
+                };
+            }
+            seen.billedKws += billedKws;
+            seen.landedKws += landedKws;
+            if (billedChargerKw() > 1e-9) seen.charging++;
+            // A UPS INSIDE a subtree the standby wave re-delivered, charging
+            // while the UPS above it still holds buffer on a dark feed — so
+            // phase 4 bridged upsD, upsE charged off that bridge, and the wave
+            // then rolled upsD back and charged upsE a second time. The tick a
+            // running total bills one charger twice.
+            if (gen3.actualKw > 0 && upsD.bufferLeft > 0 && upsE.upsMode === "charging") {
+                seen.reDeliveredCharger++;
+            }
+            // A UPS ABOVE the attach point, on live utility power, charging
+            // while the generator carries what used to be its subtree — the
+            // tick the fixup rolled the charge back and kept the bill.
+            if (trC.outForService && gen2.actualKw > 0 && upsC.upsMode === "charging") {
+                seen.ancestorCharger++;
+            }
+        }
+
+        expect(broke).toBe(null);
+
+        // ...and the run really did reach both shapes, so green cannot mean
+        // the charger simply never ran.
+        expect(seen.charging).toBeGreaterThan(400);            // chargers ran, at length
+        expect(seen.landedKws).toBeGreaterThan(FULL_KWS);      // more than a battery-full landed
+        expect(seen.billedKws).toBeGreaterThan(seen.landedKws); // and the round trip was paid
+        expect(seen.reDeliveredCharger).toBeGreaterThan(0);
+        expect(seen.ancestorCharger).toBeGreaterThan(0);
+        // The two books never disagree, so `restored` is read exactly and the
+        // invariant above carries no slack for a bug to hide in.
+        expect(seen.nameplateRefills).toBe(0);
     });
 });

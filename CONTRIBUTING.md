@@ -48,7 +48,7 @@ PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i
 npm run check     # eslint . && vitest run — exactly what CI runs
 ```
 
-Baseline today: lint clean, 19 test files, 341 tests, about 2 s. CI uses
+Baseline today: lint clean, 19 test files, 342 tests, about 2 s. CI uses
 Node 22. The skip flag matters because `playwright` is a devDependency whose
 postinstall downloads hundreds of MB of browsers that nothing in `check` uses
 — the demo recorder drives system Chrome.
@@ -103,7 +103,7 @@ Never call `Math.random` in a sim module. Schedules use two sentinel values:
 "can never fire" (how a campaign level guarantees a deterministic script).
 
 **`resetState()` is hand-maintained.** Add a field to the `STATE` literal and
-forget `resetState()` and all 341 tests still pass — the field is silently
+forget `resetState()` and all 342 tests still pass — the field is silently
 deleted on the first reset. Call `resetBuildingIds()` alongside every
 `resetState()`, and `resetWireIds()` too if you use `src/sim/build.js`.
 
