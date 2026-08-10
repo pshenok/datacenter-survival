@@ -23,6 +23,8 @@ import { tickCampaign, startLevelState, startLevelMaintenance } from "./src/camp
 import { tickMaintenance } from "./src/sim/maintenance.js";
 import { applyPreBuilt } from "./src/campaign/prebuilt.js";
 import { initCampaignUi, openCampaign, closeCampaign, openBriefing, closeBriefing, onLevelStart, tickCampaignUi } from "./src/ui/campaign-ui.js";
+import { initLabPanel, tickLabPanel, hideLabPanel, resetLabPanel } from "./src/ui/lab-panel.js";
+import { setLabDemandKw, setLabAmbientC, setLabTariffBand, fireLabEvent, resetLab } from "./src/campaign/lab.js";
 import { i18n } from "./src/i18n.js";
 
 let lastTime = 0;
@@ -171,6 +173,7 @@ function animate(time) {
     if (STATE.isRunning && dt > 0) tick(dt);
     tickTutorial();
     tickCampaignUi();
+    tickLabPanel();
 
     tickMeshes(rawDt);
     tickBadges(rawDt);
@@ -189,6 +192,10 @@ function clearWorld() {
     resetHudStats();
     clearBadges();
     renderInspect(null);
+    // The knob panel is rebuilt per level start, so a Lab run cannot leave
+    // its listeners (or its readings) behind in the next room.
+    resetLabPanel();
+    hideLabPanel();
     warnedWaveAt = 0;
     warnedBandKey = null;
     heatwaveWasActive = false;
@@ -283,7 +290,7 @@ window.briefingBack = () => {
 };
 window.backToMenu = () => {
     STATE.isRunning = false;
-    for (const id of ["gameover-modal", "objectives-panel", "pause-menu-modal", "briefing-modal", "level-result-modal"]) {
+    for (const id of ["gameover-modal", "objectives-panel", "lab-panel", "pause-menu-modal", "briefing-modal", "level-result-modal"]) {
         document.getElementById(id).classList.add("hidden");
     }
     document.getElementById("main-menu").classList.remove("hidden");
@@ -353,12 +360,32 @@ window.togglePeakShave = () => {
     STATE.peakShave.on = !STATE.peakShave.on;
     syncPeakShaveUi();
 };
+// ---- The Lab's knobs ------------------------------------------------------
+// Same boundary as togglePeakShave above: src/ui/lab-panel.js draws the panel
+// and reads STATE, and every write goes through campaign/lab.js from HERE.
+// Each of these refuses unless a sandbox level is running (STATE.lab.on), so
+// there is nothing to gate a second time — but a refused Fire is worth
+// saying out loud, because a button that silently does nothing reads as
+// broken rather than as "that window is already open".
+const labHandlers = {
+    setDemandKw: (kw) => setLabDemandKw(kw),
+    setAmbientC: (c) => setLabAmbientC(c),
+    setTariffBand: (mode) => setLabTariffBand(mode),
+    fire: (kind) => {
+        if (!fireLabEvent(kind)) showBanner(i18n.t("lab_fire_refused"), 3500);
+    },
+    reset: () => {
+        if (resetLab()) showBanner(i18n.t("lab_reset_done"), 2500);
+    },
+};
+
 window.setTool = setTool;
 window.showHelp = openFaq;
 window.closeHelp = closeFaq;
 
 // ---- boot ----
 renderPalette((type) => setTool(type));
+initLabPanel(labHandlers);
 initCampaignUi({
     freeze: () => {
         STATE.timeScale = 0;

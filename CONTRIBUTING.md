@@ -48,7 +48,7 @@ PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i
 npm run check     # eslint . && vitest run — exactly what CI runs
 ```
 
-Baseline today: lint clean, 19 test files, 342 tests, about 2 s. CI uses
+Baseline today: lint clean, 21 test files, 402 tests, about 2 s. CI uses
 Node 22. The skip flag matters because `playwright` is a devDependency whose
 postinstall downloads hundreds of MB of browsers that nothing in `check` uses
 — the demo recorder drives system Chrome.
@@ -192,6 +192,18 @@ Traps that have already bitten, all silent:
 | Streak objective without `afterSec` | A cold empty room satisfies `no_throttle` and `pue_below` before the scripted crisis lands |
 | `serve_kwh` on a resilience level | Counts energy banked before the failure. Use `serve_kwh_during_event`, which lets the LOSE build score provably zero |
 | Unknown script `kind` | Silently skipped. The five are `heatwave`, `brownout`, `outage`, `tariff`, `chiller_fail` — a typo produces a level that plays without its crisis, and the WIN test may pass for the wrong reason |
+| **No objectives at all** | The level resolves as **WON on tick one**. `tickCampaign`'s sweep starts `allDone = true` and only an unfinished objective clears it, so an empty list is vacuously complete. A level that must not resolve needs `sandbox: true` — see below |
+
+Two flags exist for a level that is not a level. `sandbox: true` makes
+`tickCampaign` skip resolution *entirely* — no objective sweep, no
+`failConditions` floors, no `endsAt` timeout — and `sim/demand.js` declines
+to set `gameOver` while it runs, so the run has no verdict of any kind.
+`alwaysUnlocked: true` opts the level out of the unlock chain so it opens on
+a fresh profile. The Lab is the only level with either, and it carries both;
+`tests/lab.test.mjs` pins the pair, including the rule that an
+`alwaysUnlocked` level must never be another level's predecessor in
+`levelOrder()` — one that can never be *completed* would gate everything
+after it forever.
 
 Six i18n keys per locale: `lv_<id>`, and `_brief`, `_scenario`, `_learn`,
 `_tip`, `_tip_fail`.

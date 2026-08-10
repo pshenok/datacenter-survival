@@ -54,6 +54,19 @@ function tickBrownout(elapsed, rng) {
     }
 }
 
+// Break one CRAC. The ONLY place a breakdown starts, so The Lab's Fire
+// button (campaign/lab.js) rehearses exactly the failure the random
+// scheduler deals out — same flag, same free self-repair clock, healed by
+// the loop in tickBreakdown like any other. atSec anchors the repair to the
+// SCHEDULED time rather than to frame timing, the rule every window in this
+// file follows.
+export function breakCrac(b, atSec) {
+    if (!b || b.type !== "crac" || b.broken) return false;
+    b.broken = true;
+    b.repairAt = atSec + CONFIG.events.cracBreakdown.selfRepairSec;
+    return true;
+}
+
 function tickBreakdown(elapsed, rng) {
     const bd = STATE.breakdown;
     const cfg = CONFIG.events.cracBreakdown;
@@ -66,8 +79,7 @@ function tickBreakdown(elapsed, rng) {
         );
         if (candidates.length > 0) {
             const pick = candidates[Math.min(candidates.length - 1, Math.floor(rng() * candidates.length))];
-            pick.broken = true;
-            pick.repairAt = bd.nextAt + cfg.selfRepairSec;
+            breakCrac(pick, bd.nextAt);
         }
         bd.nextAt += span(cfg.minIntervalSec, cfg.maxIntervalSec, rng);
     }

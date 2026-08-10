@@ -344,6 +344,13 @@ export const CONFIG = {
             { id: "ch3", titleKey: "ch3_title", levels: ["over_cooled", "one_bus", "cold_room", "two_utilities"] },
             { id: "ch4", titleKey: "ch4_title", levels: ["water_loop", "single_point_of_cold"] },
             { id: "ch5", titleKey: "ch5_title", levels: ["night_shift"] },
+            // The Lab hangs off the END of the order deliberately: nothing is
+            // downstream of it, so a level that can never be COMPLETED can
+            // never gate one. `alwaysUnlocked` is what makes it reachable
+            // from there on a fresh profile (tests/lab.test.mjs pins both
+            // halves, including that no alwaysUnlocked level is ever another
+            // level's predecessor — move this entry and that test goes red).
+            { id: "lab", titleKey: "ch_lab_title", levels: ["the_lab"] },
         ],
         levels: {
             // Teach: the delivery chain. Wire feed→transformer→ups→pdu→rack
@@ -677,6 +684,67 @@ export const CONFIG = {
                         [2, 4], [3, 5], [2, 6],
                         [3, 7],
                     ],
+                },
+            },
+
+            // ---- THE LAB: a rehearsal room, not a level -----------------
+            // Every crisis in this game is on a schedule, so understanding
+            // the transfer switch costs 220 s of survival and gets you one
+            // look at it. Here the phenomena are on buttons and the room is
+            // yours: no objectives, no win, no loss, no clock.
+            //
+            // Two flags carry that, and neither is a workaround:
+            //   sandbox        — campaign.js skips resolution ENTIRELY (no
+            //                    objective sweep, no failConditions floors,
+            //                    no endsAt), and demand.js declines to set
+            //                    gameOver. An empty objective list alone
+            //                    would resolve as WON on tick one, because
+            //                    the sweep starts allDone = true.
+            //   alwaysUnlocked — open on a fresh profile. A rehearsal room
+            //                    behind thirteen wins is a trophy.
+            //
+            // The room: one chain with a UPS, a standby generator already
+            // wired to the transformer, three racks and a CRAC, all on one
+            // 16 kW bus. Small enough to read at a glance, and every lesson
+            // is one knob away — fire an outage and the UPS bridges the
+            // generator's 3 s cutover; wind demand past 18 kW and the bus
+            // carries 21 kW on a 16 kW rating until its breaker opens; push
+            // ambient (or fire a heatwave) and watch the CRAC answer it.
+            // $2000 is for extending the room, not for surviving it.
+            the_lab: {
+                sandbox: true,
+                alwaysUnlocked: true,
+                startMoney: 2000,
+                // INERT under `sandbox` — tickCampaign returns before it
+                // ever reads endsAt. Deliberately a real number rather than
+                // Infinity: the machine test runs the Lab three times past
+                // it and still finds done === null, which proves the FLAG
+                // stops the clock. An Infinity would prove nothing.
+                timeLimitSec: 120,
+                demandKw: 12,
+                tariffCycle: true,      // the meter runs; the knob pins it
+                script: [],
+                objectives: [],
+                preBuilt: {
+                    buildings: [
+                        { type: "grid_feed", gx: 3, gz: 8 },     // 0
+                        { type: "transformer", gx: 6, gz: 8 },   // 1
+                        { type: "ups", gx: 9, gz: 8 },           // 2
+                        { type: "pdu", gx: 12, gz: 8 },          // 3
+                        { type: "rack", gx: 16, gz: 6 },         // 4
+                        { type: "rack", gx: 16, gz: 8 },         // 5
+                        { type: "rack", gx: 16, gz: 10 },        // 6
+                        { type: "crac", gx: 18, gz: 8 },         // 7
+                        { type: "generator", gx: 6, gz: 12 },    // 8
+                    ],
+                    wires: [
+                        [0, 1], [1, 2], [2, 3],
+                        [3, 4], [3, 5], [3, 6], [3, 7],
+                    ],
+                    // The transfer switch, pre-wired: the whole chain below
+                    // the transformer falls to the generator when the city
+                    // feed dies, and the UPS bridges the cutover.
+                    standby: [[8, 1]],
                 },
             },
         },

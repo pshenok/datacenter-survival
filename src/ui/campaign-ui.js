@@ -5,6 +5,7 @@
 import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
 import { completedLevels, isLevelUnlocked, levelOrder, earnedBonuses } from "../campaign/campaign.js";
+import { isLab } from "../campaign/lab.js";
 import { showBanner, renderLossLedger } from "./hud.js";
 import { i18n } from "../i18n.js";
 
@@ -97,9 +98,14 @@ export function openBriefing(id) {
     document.getElementById("briefing-title").textContent = i18n.t("lv_" + id);
     document.getElementById("briefing-scenario").textContent = i18n.t("lv_" + id + "_scenario");
     document.getElementById("briefing-learn").textContent = i18n.t("lv_" + id + "_learn");
-    const goals = cfg.objectives.map(objectiveLabel);
-    goals.push(i18n.t("brief_time", { s: cfg.timeLimitSec }));
-    for (const b of cfg.bonuses || []) goals.push(`☆ ${objectiveLabel(b)}`);
+    // A sandbox level has no goals and no clock, and printing the time limit
+    // it carries (inert — see CONFIG.campaign.levels.the_lab) would be the
+    // one lie the briefing tells.
+    const goals = cfg.sandbox ? [i18n.t("lab_goal_none")] : cfg.objectives.map(objectiveLabel);
+    if (!cfg.sandbox) {
+        goals.push(i18n.t("brief_time", { s: cfg.timeLimitSec }));
+        for (const b of cfg.bonuses || []) goals.push(`☆ ${objectiveLabel(b)}`);
+    }
     document.getElementById("briefing-goals").innerHTML =
         goals.map((g) => `<li>${g}</li>`).join("");
     document.getElementById("briefing-start").onclick = () => window.launchCampaignLevel(id);
@@ -113,8 +119,11 @@ export function closeBriefing() {
 // ---- in-level UI ---------------------------------------------------------
 export function onLevelStart(id) {
     lastResolved = null;
-    document.getElementById("objectives-panel").classList.remove("hidden");
-    renderObjectives();
+    // The Lab has nothing to track and no clock to count down; its knob
+    // panel (src/ui/lab-panel.js) takes the same slot.
+    const sandbox = !!CONFIG.campaign.levels[id].sandbox;
+    document.getElementById("objectives-panel").classList.toggle("hidden", sandbox);
+    if (!sandbox) renderObjectives();
     showBanner(i18n.t("lv_" + id + "_brief"), 7000);
 }
 
@@ -184,6 +193,10 @@ function renderObjectives() {
 export function tickCampaignUi() {
     const camp = STATE.campaign;
     if (camp.levelId === null) return;
+    // A sandbox level never resolves and has no objective rows to draw, so
+    // there is nothing here for it — and rendering the timer into a hidden
+    // panel every frame would leave a countdown waiting to be un-hidden.
+    if (isLab()) return;
 
     if (camp.done === null) {
         renderObjectives();

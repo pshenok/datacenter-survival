@@ -7,6 +7,7 @@ import { i18n } from "../i18n.js";
 import { lossLedger } from "../sim/attribution.js";
 import { LOSS_CAUSES } from "../core/loss-causes.js";
 import { utilityOf, feedIsDark } from "../sim/power.js";
+import { tariffBandAt } from "../sim/demand.js";
 import { pendingOrderFor, activeOrderFor } from "../sim/maintenance.js";
 
 const el = (id) => document.getElementById(id);
@@ -38,13 +39,21 @@ export function tickHud() {
     const tariffEl = el("hud-tariff");
     if (tariffEl) {
         const t = STATE.tariff;
-        const effective = (t.active ? t.multiplier : 1) * (t.cycleOn ? t.cycleMul : 1);
+        // STATE.tariff.band and .cycleMul are written by tickDemand, so they
+        // are still null/1 for the whole of a PAUSED start — which is exactly
+        // when a player is planning against the meter. Falling back to
+        // tariffBandAt() (pure, and knowable in advance by design) is what
+        // makes the pill readable then; without it the band label rendered
+        // the literal key `tariff_band_null` over the money for the entire
+        // build phase, in free play and in The Lab alike.
+        const band = t.band !== null ? { key: t.band, mult: t.cycleMul } : tariffBandAt(STATE.elapsedGameTime);
+        const effective = (t.active ? t.multiplier : 1) * (t.cycleOn ? band.mult : 1);
         const show = t.active || t.cycleOn;
         if (show) {
             tariffEl.textContent = t.active
                 ? i18n.t("tariff_pill", { mult: round2(effective) })
                 : i18n.t("tariff_band_pill", {
-                    band: i18n.t("tariff_band_" + t.band),
+                    band: i18n.t("tariff_band_" + band.key),
                     mult: round2(effective),
                 });
             // Amber is the alarm colour and belongs to the expensive half

@@ -213,6 +213,10 @@
   <!-- In-level objectives panel (same slot as the tutorial checklist) -->
   <div id="objectives-panel" class="hidden fixed top-24 left-4 z-40 glass-panel rounded-xl px-4 py-3 w-64 border border-emerald-500/30"></div>
 
+  <!-- The Lab's knob panel (same slot; rendered by src/ui/lab-panel.js).
+       A sandbox level has no objectives to show, so the two never coexist. -->
+  <div id="lab-panel" class="hidden fixed top-24 left-4 z-40 glass-panel rounded-xl px-4 py-3 w-64 border border-amber-500/30"></div>
+
   <!-- Level result (victory or time-out) -->
   <div id="level-result-modal" class="hidden absolute inset-0 z-50 flex items-center justify-center bg-black/80">
     <div class="glass-panel rounded-2xl p-10 max-w-md w-full mx-4 text-center border border-emerald-500/40">

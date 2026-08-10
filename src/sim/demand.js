@@ -92,6 +92,14 @@ export function upcomingWave(elapsed) {
 export function tariffBandAt(elapsed) {
     const cfg = CONFIG.tariff;
     const bands = cfg.bands;
+    // The Lab pins a band so a player can stand in one and watch the meter
+    // instead of waiting out a 120 s cycle to see the other half of it.
+    // STATE.lab.tariffBand is null everywhere else, and an unknown key falls
+    // through to the clock rather than inventing a band.
+    if (STATE.lab.tariffBand !== null) {
+        const pinned = bands.find((b) => b.key === STATE.lab.tariffBand);
+        if (pinned) return pinned;
+    }
     if (!Number.isFinite(elapsed) || !cfg.periodSec || bands.length === 0) {
         return bands[0] || { fromSec: 0, mult: 1, key: null };
     }
@@ -109,6 +117,9 @@ export function tariffBandAt(elapsed) {
 // rule as upcomingWave(), so the HUD treats both announcements alike.
 export function upcomingBand(elapsed) {
     const cfg = CONFIG.tariff;
+    // A pinned band never changes, so announcing a change is the same lie
+    // upcomingWave() refuses to tell while demand is pinned.
+    if (STATE.lab.tariffBand !== null) return null;
     if (!STATE.tariff.cycleOn || !Number.isFinite(elapsed) || !cfg.periodSec) return null;
     const t = ((elapsed % cfg.periodSec) + cfg.periodSec) % cfg.periodSec;
     let nextAt = cfg.periodSec;      // wrapping to band 0 is itself a boundary
@@ -263,10 +274,20 @@ export function tickDemand(dt, elapsed) {
 
     // Game over. Bankruptcy is checked first — if both trip in the same
     // tick, the verdict is "bankrupt" (documented ordering).
-    if (STATE.money <= eco.bankruptcyAt) {
-        STATE.gameOver = "bankrupt";
-    } else if (STATE.reputation <= CONFIG.sla.gameOverAt + REPUTATION_GAMEOVER_EPSILON) {
-        STATE.gameOver = "reputation";
+    //
+    // A SANDBOX level (STATE.lab.on — The Lab, false everywhere else) has no
+    // loss condition at all, matching campaign/campaign.js's refusal to
+    // resolve it: leave the room dark for about seventy seconds and
+    // reputation reaches the floor, and a rehearsal room that ends in a
+    // frozen clock behind no modal at all is worse than one you cannot lose.
+    // The meter, the SLA penalty and the reputation drift all still run —
+    // they are what the knobs are there to show you.
+    if (!STATE.lab.on) {
+        if (STATE.money <= eco.bankruptcyAt) {
+            STATE.gameOver = "bankrupt";
+        } else if (STATE.reputation <= CONFIG.sla.gameOverAt + REPUTATION_GAMEOVER_EPSILON) {
+            STATE.gameOver = "reputation";
+        }
     }
 }
 

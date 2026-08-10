@@ -99,10 +99,22 @@ function markBonuses(levelId, ids) {
 
 // The first level is always open; each next unlocks when its predecessor in
 // chapter order is completed.
+//
+// `alwaysUnlocked` opts a level out of that chain entirely. The Lab is worth
+// nothing behind thirteen wins: you want to rehearse the transfer switch
+// BEFORE fuel_clock asks you to use it, not after you have beaten the game.
+// The flag opens ITS OWN level and nothing else — it is not a completion, so
+// nothing downstream moves (tests/lab.test.mjs pins that, and pins the other
+// half of the deal too: an alwaysUnlocked level must never be another
+// level's predecessor, because a level that can never be COMPLETED would
+// gate everything after it forever).
 export function isLevelUnlocked(id, done = completedLevels()) {
     const order = levelOrder();
     const i = order.indexOf(id);
-    if (i <= 0) return i === 0;
+    if (i < 0) return false;
+    const cfg = levelCfg(id);
+    if (cfg && cfg.alwaysUnlocked) return true;
+    if (i === 0) return true;
     return done.includes(order[i - 1]);
 }
 
@@ -115,6 +127,13 @@ export function startLevelState(id) {
 
     STATE.money = cfg.startMoney;
     STATE.demandFixedKw = cfg.demandKw;
+    // The Lab's knobs (campaign/lab.js) are armed by exactly this flag and
+    // refuse to write anything while it is false — so the whole feature is a
+    // no-op in the thirteen proven levels and in survival. Written on EVERY
+    // level start as a fresh literal, not only on the sandbox one: leaving
+    // the previous run's overrides in place is how a room the player set to
+    // 40 °C in the Lab follows them into hot_aisle.
+    STATE.lab = { on: cfg.sandbox === true, ambientC: null, tariffBand: null };
 
     // No random events, no contracts — a level runs only its script.
     STATE.heatwave.nextAt = Infinity;
@@ -151,35 +170,55 @@ export function startLevelState(id) {
 function runScript(cfg, elapsed) {
     for (const ev of cfg.script) {
         if (elapsed < ev.atSec || elapsed - ev.atSec > 1) continue; // fire window
-        if (ev.kind === "brownout" && !STATE.brownout.active) {
-            STATE.brownout.active = true;
-            STATE.brownout.factor = ev.factor;
-            STATE.brownout.endsAt = ev.atSec + ev.durationSec;
-        } else if (ev.kind === "heatwave" && !STATE.heatwave.active) {
-            STATE.heatwave.active = true;
-            STATE.heatwave.endsAt = ev.atSec + ev.durationSec;
-        } else if (ev.kind === "outage" && !STATE.gridOutage.active) {
-            STATE.gridOutage.active = true;
-            // Default "all" keeps every earlier level (and the mid-outage
-            // exploit test) on exactly the behaviour they were written for.
-            STATE.gridOutage.scope = ev.scope || "all";
-            STATE.gridOutage.endsAt = ev.atSec + ev.durationSec;
-        } else if (ev.kind === "chiller_fail") {
-            // Kills the plant, not a head: everything drinking from the loop
-            // stops at once, which is the whole point of the lesson.
-            for (const b of STATE.buildings) {
-                if (b.type === "chiller" && !b.broken) {
-                    b.broken = true;
-                    b.repairAt = Infinity;   // this one does not self-heal
-                    break;
-                }
-            }
-        } else if (ev.kind === "tariff" && !STATE.tariff.active) {
-            STATE.tariff.active = true;
-            STATE.tariff.multiplier = ev.multiplier;
-            STATE.tariff.endsAt = ev.atSec + ev.durationSec;
-        }
+        applyScriptEvent(ev, ev.atSec);
     }
+}
+
+// Open ONE scripted window, anchored to atSec (the scheduled time, not frame
+// timing — the sim pattern). Exported because The Lab's Fire buttons
+// (campaign/lab.js) come through here too: a rehearsed outage has to be the
+// same outage a level scripts, or the Lab teaches something the game does
+// not do. Unknown kinds are silently skipped, which is why CONTRIBUTING
+// warns that a typo produces a level that plays without its crisis.
+//
+// Returns whether anything actually opened. runScript ignores it — a script
+// event that lands on an already-open window has always been a no-op — but
+// the Lab needs it: a Fire button that silently does nothing reads as broken
+// rather than as "that window is already open".
+export function applyScriptEvent(ev, atSec) {
+    if (ev.kind === "brownout" && !STATE.brownout.active) {
+        STATE.brownout.active = true;
+        STATE.brownout.factor = ev.factor;
+        STATE.brownout.endsAt = atSec + ev.durationSec;
+        return true;
+    } else if (ev.kind === "heatwave" && !STATE.heatwave.active) {
+        STATE.heatwave.active = true;
+        STATE.heatwave.endsAt = atSec + ev.durationSec;
+        return true;
+    } else if (ev.kind === "outage" && !STATE.gridOutage.active) {
+        STATE.gridOutage.active = true;
+        // Default "all" keeps every earlier level (and the mid-outage
+        // exploit test) on exactly the behaviour they were written for.
+        STATE.gridOutage.scope = ev.scope || "all";
+        STATE.gridOutage.endsAt = atSec + ev.durationSec;
+        return true;
+    } else if (ev.kind === "chiller_fail") {
+        // Kills the plant, not a head: everything drinking from the loop
+        // stops at once, which is the whole point of the lesson.
+        for (const b of STATE.buildings) {
+            if (b.type === "chiller" && !b.broken) {
+                b.broken = true;
+                b.repairAt = Infinity;   // this one does not self-heal
+                return true;
+            }
+        }
+    } else if (ev.kind === "tariff" && !STATE.tariff.active) {
+        STATE.tariff.active = true;
+        STATE.tariff.multiplier = ev.multiplier;
+        STATE.tariff.endsAt = atSec + ev.durationSec;
+        return true;
+    }
+    return false;
 }
 
 // ---- objective evaluation (sim/contracts.js semantics) -------------------
@@ -269,12 +308,33 @@ export function tickCampaign(dt, elapsed) {
     if (camp.levelId === null || camp.done !== null) return;
     if (!Number.isFinite(dt) || dt <= 0) return;
 
+    const cfg = levelCfg(camp.levelId);
+
+    // A SANDBOX level does not resolve. Not "an objective that can never
+    // complete" — an explicit statement that this level has no verdict: the
+    // objective sweep, the failConditions floors, the endsAt timeout and the
+    // gameOver branch below are all skipped, and sim/demand.js declines to
+    // set gameOver at all while STATE.lab.on, for the same reason. The Lab
+    // is a rehearsal room; a rehearsal you can lose is a level.
+    //
+    // An EMPTY objective list would do the exact opposite of what it looks
+    // like. The sweep below starts `allDone = true` and only an unfinished
+    // objective clears it, so a level with no objectives resolves as WON on
+    // its first tick — which is why the flag has to say "does not resolve"
+    // rather than the level simply having nothing to do.
+    //
+    // The script still runs: a sandbox level may still declare one, and the
+    // Lab's Fire buttons go through the same applyScriptEvent().
+    if (cfg.sandbox) {
+        runScript(cfg, elapsed);
+        return;
+    }
+
     if (STATE.gameOver !== null) {
         resolve(camp, "failed", "fail_" + STATE.gameOver);
         return;
     }
 
-    const cfg = levelCfg(camp.levelId);
     runScript(cfg, elapsed);
 
     // Level-scoped floors: survival's bankruptcyAt (-500) is far below a

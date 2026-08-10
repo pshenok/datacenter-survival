@@ -66,6 +66,17 @@ Optional bonus objectives sit on a different axis than the level's own goal
 — serve *through* the sag, or bridge three blackouts and still finish with
 money in the bank.
 
+**The Lab** sits below them and is open from the first minute, because a
+rehearsal room behind thirteen wins is a trophy. It is a working hall — one
+chain with a UPS, a standby generator already wired to the transformer, three
+racks and a CRAC — with live knobs for demand, ambient temperature and the
+tariff band, and buttons that fire a heatwave, a brownout, a grid outage, a
+peak-price window or a CRAC failure on demand. There are no objectives, no
+clock and nothing to lose. Every crisis in the rest of the game is on a
+schedule, so understanding the transfer switch costs you 220 seconds of
+waiting and gets you one look at it; here you can watch the same one until
+you can predict it.
+
 ## What it teaches
 
 - The datacenter power chain, and why a breaker opening is not the problem
@@ -104,12 +115,12 @@ real playthrough.
 
 ## Status
 
-Thirteen campaign levels across five chapters, nine buildings, 342 tests.
-Simulation: wired power with inverse-time breakers, a diffusing heat field
-with part-load cooling, a shared chilled-water loop, UPS buffers, standby
-generators with fuel, grid sags, per-substation outages, time-of-use and peak
-tariffs, peak shaving off the UPS battery, rolling contracts, and per-cause
-loss attribution. English and Ukrainian.
+Thirteen campaign levels across five chapters plus The Lab, nine buildings,
+402 tests. Simulation: wired power with inverse-time breakers, a diffusing
+heat field with part-load cooling, a shared chilled-water loop, UPS buffers,
+standby generators with fuel, grid sags, per-substation outages, time-of-use
+and peak tariffs, peak shaving off the UPS battery, rolling contracts, and
+per-cause loss attribution. English and Ukrainian.
 
 Peak shaving is a toggle, not an upgrade. A charged UPS can serve its subtree
 from the battery instead of the meter, but the battery gives back less than
@@ -118,8 +129,9 @@ dearer than the one you buy it back in. Left switched on at a flat price it
 loses money and leaves you with no ride-through — the FAQ's Shaving tab has
 the numbers, generated from the same config the simulation bills from.
 
-Next: a Lab level with live knobs, the last open item on the roadmap
-([#5](https://github.com/pshenok/datacenter-survival/issues/5)).
+The Lab was the last open item on the roadmap
+([#5](https://github.com/pshenok/datacenter-survival/issues/5)); it is in.
+What comes next is whatever a level turns out not to be able to teach.
 
 ## Contributing
 

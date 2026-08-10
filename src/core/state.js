@@ -97,6 +97,19 @@ export const STATE = {
     // mechanic must be invisible until chosen, same as STATE.tariff.cycleOn.
     peakShave: { on: false },
 
+    // THE LAB (owned by campaign/lab.js; written only by the player, through
+    // game.js, exactly like peakShave above). A rehearsal room: the knobs
+    // summon the phenomena the rest of the game puts on a schedule.
+    //   on        — a level flagged `sandbox` is running. Set by
+    //               startLevelState, false everywhere else, and the single
+    //               condition every knob checks — which is what keeps the
+    //               Lab inert in the thirteen proven levels and in survival.
+    //   ambientC  — the heat field's ambient floor (sim/heat.js), or null
+    //               for CONFIG.heat.ambientC. NEVER write CONFIG.
+    //   tariffBand— a pinned day/night band key (sim/demand.js), or null to
+    //               let the clock run the cycle.
+    lab: { on: false, ambientC: null, tariffBand: null },
+
     // meta
     gameOver: null,         // null | "bankrupt" | "reputation"
     sound: null,
@@ -131,6 +144,7 @@ export function resetState() {
     STATE.campaign = { levelId: null, objectives: [], bonuses: [], endsAt: 0, done: null, reason: null };
     STATE.losses = { tickKw: {}, totalKwh: {}, blame: [] };
     STATE.peakShave = { on: false };
+    STATE.lab = { on: false, ambientC: null, tariffBand: null };
     STATE.gameOver = null;
 }
 
