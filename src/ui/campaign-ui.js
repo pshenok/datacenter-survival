@@ -4,7 +4,7 @@
 // hands us a freeze() callback so play/pause UI stays game.js's business.
 import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
-import { completedLevels, isLevelUnlocked, levelOrder, earnedBonuses } from "../campaign/campaign.js";
+import { completedLevels, isLevelUnlocked, levelOrder, nextLevelId, earnedBonuses } from "../campaign/campaign.js";
 import { isLab } from "../campaign/lab.js";
 import { showBanner, renderLossLedger } from "./hud.js";
 import { i18n } from "../i18n.js";
@@ -30,8 +30,7 @@ export function initCampaignUi(opts) {
         window.launchCampaignLevel(STATE.campaign.levelId);   // rerun, no briefing
     });
     document.getElementById("level-result-next").addEventListener("click", () => {
-        const order = levelOrder();
-        const next = order[order.indexOf(STATE.campaign.levelId) + 1];
+        const next = nextLevelId(STATE.campaign.levelId);
         hideResult();
         if (next) window.startCampaignLevel(next);            // new level → briefing
         else window.backToMenu();
@@ -223,8 +222,7 @@ export function tickCampaignUi() {
         if (camp.bonuses.length) {
             sub.textContent += "  " + camp.bonuses.map((b) => (b.done ? "★" : "☆")).join("");
         }
-        const order = levelOrder();
-        const hasNext = order.indexOf(camp.levelId) < order.length - 1;
+        const hasNext = nextLevelId(camp.levelId) !== null;
         next.classList.toggle("hidden", !hasNext);
         retry.classList.add("hidden");
     } else {

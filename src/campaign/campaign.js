@@ -118,6 +118,24 @@ export function isLevelUnlocked(id, done = completedLevels()) {
     return done.includes(order[i - 1]);
 }
 
+// The "next level" after a win: the first FOLLOWING level in levelOrder()
+// that is not itself alwaysUnlocked. The Lab sits last in levelOrder() so it
+// is reachable from a fresh profile (see isLevelUnlocked above), but that
+// same position would otherwise make it look like "level 14" the moment a
+// player wins night_shift, the campaign finale. alwaysUnlocked already means
+// "not a completion, opts out of the unlock chain" — this is the same idea
+// applied to the OTHER direction of that chain: a level nothing can complete
+// must not be what "next" resolves to, either. Returns null when there is no
+// such level, which is what lets the campaign actually end.
+export function nextLevelId(id) {
+    const order = levelOrder();
+    for (let i = order.indexOf(id) + 1; i < order.length; i++) {
+        const cfg = levelCfg(order[i]);
+        if (!cfg || !cfg.alwaysUnlocked) return order[i];
+    }
+    return null;
+}
+
 // ---- level lifecycle -----------------------------------------------------
 // State-side start only: the caller (game.js) owns the world reset and UI.
 // Must run AFTER resetState() — it overrides the survival defaults.

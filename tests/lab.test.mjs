@@ -28,7 +28,7 @@ import { tickHeat } from "../src/sim/heat.js";
 import { tickCrisis } from "../src/sim/crisis.js";
 import { tickContracts } from "../src/sim/contracts.js";
 import { tickMaintenance } from "../src/sim/maintenance.js";
-import { tickCampaign, startLevelState, levelCfg, levelOrder, isLevelUnlocked } from "../src/campaign/campaign.js";
+import { tickCampaign, startLevelState, levelCfg, levelOrder, isLevelUnlocked, nextLevelId } from "../src/campaign/campaign.js";
 import { applyPreBuilt } from "../src/campaign/prebuilt.js";
 import { placeBuilding, connect, resetWireIds } from "../src/sim/build.js";
 import {
@@ -175,6 +175,33 @@ describe("alwaysUnlocked — reachable before the campaign, and a rung on nothin
             expect(
                 prev.alwaysUnlocked === true,
                 `${order[i]} is gated by ${order[i - 1]}, which can never be completed`
+            ).toBe(false);
+        }
+    });
+
+    // The other half of the same rule, on the other side of a WIN: the Lab
+    // sits last in levelOrder() so a fresh profile can reach it (the two
+    // tests above), but that same position must NOT make it look like
+    // "the next level" the moment a player wins the level before it. If it
+    // did, beating the campaign finale would hand the player a sandbox
+    // instead of ending the campaign.
+    it("THE CAMPAIGN ENDS — the level before the Lab has NO next level, not the Lab", () => {
+        const order = levelOrder();
+        const lab = order[order.length - 1];
+        expect(lab).toBe(LAB);
+        const finale = order[order.length - 2];
+        expect(finale).toBe("night_shift");
+        expect(nextLevelId(finale)).toBeNull();
+    });
+
+    it("more generally: nextLevelId never lands on an alwaysUnlocked level", () => {
+        const order = levelOrder();
+        for (const id of order) {
+            const next = nextLevelId(id);
+            if (next === null) continue;
+            expect(
+                levelCfg(next).alwaysUnlocked === true,
+                `${id}'s next level resolved to ${next}, which can never be completed`
             ).toBe(false);
         }
     });

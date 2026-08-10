@@ -48,7 +48,7 @@ PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i
 npm run check     # eslint . && vitest run — exactly what CI runs
 ```
 
-Baseline today: lint clean, 21 test files, 402 tests, about 2 s. CI uses
+Baseline today: lint clean, 21 test files, 406 tests, about 2 s. CI uses
 Node 22. The skip flag matters because `playwright` is a devDependency whose
 postinstall downloads hundreds of MB of browsers that nothing in `check` uses
 — the demo recorder drives system Chrome.
