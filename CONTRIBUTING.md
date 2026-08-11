@@ -103,7 +103,7 @@ Never call `Math.random` in a sim module. Schedules use two sentinel values:
 "can never fire" (how a campaign level guarantees a deterministic script).
 
 **`resetState()` is hand-maintained.** Add a field to the `STATE` literal and
-forget `resetState()` and all 342 tests still pass — the field is silently
+forget `resetState()` and all 406 tests still pass — the field is silently
 deleted on the first reset. Call `resetBuildingIds()` alongside every
 `resetState()`, and `resetWireIds()` too if you use `src/sim/build.js`.
 
