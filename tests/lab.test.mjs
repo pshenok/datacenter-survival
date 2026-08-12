@@ -547,7 +547,7 @@ describe("fire now — the same window the real event opens", () => {
     it("refuses a kind nobody defined", () => {
         startLab();
         expect(fireLabEvent("earthquake")).toBe(false);
-        expect(LAB_EVENTS).toEqual(["heatwave", "brownout", "outage", "tariff", "crac_fail"]);
+        expect(LAB_EVENTS).toEqual(["heatwave", "brownout", "outage", "tariff", "drought", "crac_fail"]);
     });
 });
 

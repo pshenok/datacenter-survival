@@ -21,6 +21,29 @@ export const STATE = {
     // out power link, and the price of shared efficiency.
     coolingLoop: { capacityUnits: 0, demandUnits: 0, ratio: 1 },
 
+    // WATER — the other efficiency number, and the one that gets a facility
+    // into the local newspaper. An evaporative tower rejects heat by boiling
+    // water off, so a chilled-water loop has a running water bill that an
+    // air-cooled CRAC simply does not.
+    //   litersPerHour — the CURRENT evaporation rate, written by sim/heat.js
+    //                   from the cooling actually delivered. Stated at the
+    //                   billing scale (one game minute = one billing hour),
+    //                   the same units the power bill speaks, so sim/demand.js
+    //                   charges it with the identical rate * dt / 60 rule.
+    //   totalLiters   — the run ledger, accumulated by sim/demand.js from
+    //                   exactly what it billed, so the two can never diverge.
+    //   itKwh         — WUE's denominator. The industry defines WUE as litres
+    //                   per kWh of IT energy, so this is IT energy: NOT
+    //                   facility energy (that is PUE's numerator) and not the
+    //                   heat the plant rejected.
+    water: { litersPerHour: 0, totalLiters: 0, itKwh: 0 },
+
+    // DROUGHT (owned by sim/crisis.js): the water utility prices scarcity for
+    // a window. Multiplies the water line in sim/demand.js and NOTHING else —
+    // the exact shape of the peak tariff above, on the other utility. nextAt
+    // === null means "not drawn yet"; campaign levels pin it to Infinity.
+    drought: { active: false, endsAt: 0, nextAt: null, multiplier: 1 },
+
     // demand & delivery (owned by sim/demand.js)
     demandKw: 0,
     servedKw: 0,
@@ -123,6 +146,8 @@ export function resetState() {
     STATE.wires = [];
     STATE.heatField = new Float32Array(CONFIG.gridSize * CONFIG.gridSize).fill(CONFIG.heat.ambientC);
     STATE.coolingLoop = { capacityUnits: 0, demandUnits: 0, ratio: 1 };
+    STATE.water = { litersPerHour: 0, totalLiters: 0, itKwh: 0 };
+    STATE.drought = { active: false, endsAt: 0, nextAt: null, multiplier: 1 };
     STATE.demandKw = 0;
     STATE.servedKw = 0;
     STATE.demandFixedKw = null;

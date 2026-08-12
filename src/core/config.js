@@ -135,6 +135,30 @@ export const CONFIG = {
             idleDrawKw: 1.5,     // pumps and the tower run regardless
             partLoadExp: 0.7,
             coolUnits: 45,       // chilled-water capacity it supplies
+            // ---- WATER: the price the loop does not pay on the power meter
+            // An evaporative cooling tower does not "move" heat to the
+            // outside — it BOILS WATER OFF, and that water is gone. It is the
+            // mechanism, not a leak, and it is why a chiller plant beats
+            // air-cooled units on power in the first place.
+            //
+            // Real plants land near a WUE of 1.8 L per kWh of IT energy, and
+            // in this simulation a cooling unit IS a kW of heat (a rack's
+            // heatPerKw is 1.0), so 1.8 L per cooling-unit-hour is literally
+            // the number the industry quotes. A steady room whose cooling
+            // matches its IT load therefore reads a run WUE of about 1.8 —
+            // tests/water.test.mjs pins that correspondence.
+            //
+            // Billed on the cooling the plant actually DELIVERS (coolUnits x
+            // duty, sim/heat.js), never on its nameplate: a plant nobody is
+            // drinking from sits at duty 0 and evaporates nothing while still
+            // paying idleDrawKw. That asymmetry is honest — pumps spin
+            // whether or not there is heat, evaporation does not happen
+            // without heat to reject.
+            //
+            // A CRAC has no such field, and that is the whole trade: it
+            // rejects its heat straight to air, so it costs more power at
+            // every size, forever, and not one litre of water.
+            litersPerCoolUnit: 1.8,
         },
         crah: {
             name: "CRAH Unit",
@@ -215,6 +239,30 @@ export const CONFIG = {
         powerCostPerKwh: 0.9,    // paid on TOTAL facility draw — PUE in the wallet
         bankruptcyAt: -500,
         slaPenaltyPerKwhMissed: 1.5,
+        // ---- The water meter, a SECOND utility ------------------------
+        // Charged in sim/demand.js on the litres a cooling tower actually
+        // evaporated, at the same billing scale as power (rate * qty * dt/60)
+        // — and deliberately NOT multiplied by the electricity tariff. The
+        // peak window and the day/night cycle price the GRID; a water utility
+        // does not charge more because the grid is busy. Only the drought
+        // (CONFIG.events.drought) moves this number.
+        //
+        // WHY 0.009. Under a cent a litre, which is the right order for
+        // industrial water, and low enough that the chilled-water loop still
+        // wins in normal conditions — which is true to life and the whole
+        // reason evaporative cooling is used at all. At full output the plant
+        // makes 45 units for 6 kW where the 4.5 CRACs doing the same job want
+        // 13.5 kW: 4.35 kW saved, worth $3.92 a billing hour, against 81 L of
+        // water costing $0.73. Water eats under a fifth of the advantage, so
+        // the loop is still obviously the right call — and the FAQ's Water
+        // tab prints exactly that arithmetic, generated from these values.
+        //
+        // Break-even sits at $0.048/L (a little higher at the part-load a
+        // real room actually runs at, because the plant's fixed draw is
+        // spread over less cooling). That is the number the drought exists to
+        // cross; see CONFIG.events.drought for why its multiplier is what it
+        // is.
+        waterCostPerLiter: 0.009,
     },
 
     // ---- Reputation / SLA ---------------------------------------------
@@ -273,6 +321,38 @@ export const CONFIG = {
             minDurationSec: 20,
             maxDurationSec: 30,
             multiplier: 2.5,
+        },
+        // DROUGHT: the water utility prices scarcity. Multiplies the WATER
+        // bill for the window and touches nothing else — not capacity, not
+        // heat, not SLA, and not the power meter (that is the peak tariff's
+        // job, on the other utility). Same shape as that tariff window, and
+        // for the same reason: an economic event with exactly one reader is
+        // provably economic-only.
+        //
+        // WHY x12, and why the multiplier rather than the standing price.
+        // Break-even — the water price at which the loop's efficiency stops
+        // paying for its tower — is $0.048/L at full output and around
+        // $0.058/L at the part-load a real room runs at. At x12 water costs
+        // $0.108/L, roughly double either figure, so for as long as the
+        // window is open the AIR-COOLED CRAC is the cheaper room. That is the
+        // point of the event: the CRAC is strictly worse on power at every
+        // size, and a drought is the one condition that makes it right
+        // anyway.
+        //
+        // A smaller multiplier was tried on paper and rejected: at x5 the
+        // drought price sits under break-even at part load, so the loop still
+        // wins, the decision never flips, and the event teaches nothing but a
+        // slightly larger bill. Real drought surcharges are percentages; this
+        // is a scarcity price, and it is inflated on the same axis this
+        // game's power price already is ($0.9/kWh against a real ~$0.09).
+        // The physics — 1.8 L per kWh rejected, charged on delivered cooling
+        // — are not inflated, and those are what the lesson rests on.
+        drought: {
+            minIntervalSec: 110,
+            maxIntervalSec: 170,
+            minDurationSec: 25,
+            maxDurationSec: 40,
+            multiplier: 12,
         },
     },
 

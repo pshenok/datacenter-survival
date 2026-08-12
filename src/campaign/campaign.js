@@ -159,6 +159,7 @@ export function startLevelState(id) {
     STATE.breakdown.nextAt = Infinity;
     STATE.gridOutage.nextAt = Infinity;
     STATE.tariff.nextAt = Infinity;
+    STATE.drought.nextAt = Infinity;
     STATE.contract.nextAt = Infinity;
     // The day/night meter is per-level, and off unless the level teaches it.
     // Switching it on globally would re-price all twelve existing levels and
@@ -234,6 +235,13 @@ export function applyScriptEvent(ev, atSec) {
         STATE.tariff.active = true;
         STATE.tariff.multiplier = ev.multiplier;
         STATE.tariff.endsAt = atSec + ev.durationSec;
+        return true;
+    } else if (ev.kind === "drought" && !STATE.drought.active) {
+        // The water utility's peak window. Prices the tower and nothing else,
+        // so a room with no evaporative plant cannot tell it happened.
+        STATE.drought.active = true;
+        STATE.drought.multiplier = ev.multiplier;
+        STATE.drought.endsAt = atSec + ev.durationSec;
         return true;
     }
     return false;
@@ -408,6 +416,11 @@ function resolve(camp, verdict, reason = null) {
     STATE.gridOutage.active = false;
     STATE.tariff.active = false;
     STATE.tariff.multiplier = 1;
+    // The drought is a latched window like the two above: with the level
+    // resolved every schedule stays pinned to Infinity, so nothing else would
+    // ever close it and the water bill would stay at x12 behind the modal.
+    STATE.drought.active = false;
+    STATE.drought.multiplier = 1;
 }
 
 // Work orders index into the room applyPreBuilt just built, so this runs

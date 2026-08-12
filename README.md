@@ -33,6 +33,13 @@ totals it in dollars.*
   than they save. That is why your **PUE** (total facility power ÷ IT power)
   is both your score and your power bill. Press **T** for the thermal overlay
   and watch hot aisles form from your own layout.
+- **The plant drinks.** A chiller's cooling tower rejects heat by evaporating
+  water — around 1.8 litres per kWh, which is what the industry calls **WUE**
+  and what the HUD shows beside PUE. It is cheap enough that the loop still
+  wins, right up until a **drought** prices water twelve times over: then the
+  air-cooled CRAC, strictly worse on power at every size, is the cheaper room.
+  PUE is the number everyone quotes; WUE is the one that gets a datacenter
+  into the local newspaper.
 
 Overheated racks throttle, throttled racks miss SLA, missed SLA drains
 reputation and money. And every kilowatt you fail to serve is **named**:
@@ -87,6 +94,8 @@ you can predict it.
 - Batteries bridge seconds, generators carry hours, fuel is the actual limit
 - Shared cooling is shared efficiency and shared blast radius — the same
   property, and scale decides which one you get
+- WUE, and that efficiency has a second bill: the loop buys its power
+  advantage with evaporated water, and a drought is what makes that matter
 - Diagnosis: reading an attribution ledger instead of guessing
 
 ## Running it
@@ -116,11 +125,12 @@ real playthrough.
 ## Status
 
 Thirteen campaign levels across five chapters plus The Lab, nine buildings,
-406 tests. Simulation: wired power with inverse-time breakers, a diffusing
-heat field with part-load cooling, a shared chilled-water loop, UPS buffers,
-standby generators with fuel, grid sags, per-substation outages, time-of-use
-and peak tariffs, peak shaving off the UPS battery, rolling contracts, and
-per-cause loss attribution. English and Ukrainian.
+445 tests. Simulation: wired power with inverse-time breakers, a diffusing
+heat field with part-load cooling, a shared chilled-water loop metered for
+water on a WUE, UPS buffers, standby generators with fuel, grid sags,
+per-substation outages, time-of-use and peak tariffs, droughts, peak shaving
+off the UPS battery, rolling contracts, and per-cause loss attribution.
+English and Ukrainian.
 
 Peak shaving is a toggle, not an upgrade. A charged UPS can serve its subtree
 from the battery instead of the meter, but the battery gives back less than

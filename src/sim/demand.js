@@ -5,9 +5,12 @@
 // STATE fields owned by this module:
 //   demandKw    — output of the demand curve (kW asked of the facility)
 //   servedKw    — kW actually delivered against that demand this tick
-//   money       — per-tick revenue / power-bill / SLA-penalty flows (capex
-//                 for placing buildings is charged by the build action in
-//                 the UI layer, not here)
+//   money       — per-tick revenue / power-bill / water-bill / SLA-penalty
+//                 flows (capex for placing buildings is charged by the build
+//                 action in the UI layer, not here)
+//   water       — { totalLiters, itKwh } run ledger. litersPerHour is NOT
+//                 owned here: sim/heat.js writes the rate, this module bills
+//                 it and accumulates exactly what it billed
 //   reputation  — drifts toward the served/demand ratio, clamped 0..100
 //   heatwave    — { active, endsAt, nextAt } event schedule (pure state
 //                 math against elapsed game time; no timers)
@@ -260,6 +263,29 @@ export function tickDemand(dt, elapsed) {
     // subtracts it, here and nowhere else.
     const billedDrawKw = Math.max(0, STATE.totalDrawKw - STATE.batteryKw);
     STATE.money -= billedDrawKw * eco.powerCostPerKwh * tariffMul * billingHours;
+    // WATER — a SECOND utility, on the same meter path and the same billing
+    // scale. STATE.water.litersPerHour is written by sim/heat.js, which runs
+    // AFTER this module, so what is billed here is last tick's evaporation
+    // rate: the same one-tick lag STATE.totalDrawKw already has, and for the
+    // same reason.
+    //
+    // The DROUGHT multiplies this line and nothing else. It is deliberately
+    // NOT multiplied by tariffMul: the peak window and the day/night cycle
+    // price ELECTRICITY, and a facility buying water from a water utility
+    // does not pay more for it because the grid is busy. Two utilities, two
+    // prices, two events — that separation is the lesson, and keeping the
+    // multipliers apart here is the only thing that enforces it.
+    //
+    // totalLiters is accumulated from exactly the quantity that was charged,
+    // so the run ledger can never tell a different story from the bill.
+    const liters = Math.max(0, STATE.water.litersPerHour) * billingHours;
+    STATE.water.totalLiters += liters;
+    STATE.money -= liters * eco.waterCostPerLiter * (STATE.drought.active ? STATE.drought.multiplier : 1);
+    // WUE's denominator, by the industry's definition: kWh of IT energy, not
+    // facility energy (that would be PUE's numerator) and not the heat the
+    // plant rejected. Accumulated here so the ledger and the bill are read
+    // off the same tick's facts.
+    STATE.water.itKwh += STATE.itDrawKw * billingHours;
     STATE.money -= missedKw * eco.slaPenaltyPerKwhMissed * billingHours;
 
     // Reputation drifts toward the SLA compliance ratio mapped to 0..100.

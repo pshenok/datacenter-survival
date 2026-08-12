@@ -31,6 +31,14 @@ export class Building {
         // CRAC duty cycle (owned by sim/heat.js): 0..1 of coolPerSec applied.
         this.duty = 0;
 
+        // Litres this plant's cooling tower is evaporating right now, at the
+        // billing scale (owned by sim/heat.js). Stored rather than recomputed
+        // for the same reason actualKw is: the inspector must show the number
+        // the meter charges, and a formula restated in the HUD is a formula
+        // that can disagree with the simulation. 0 for everything that is not
+        // an evaporatively cooled plant — a CRAC never drinks.
+        this.waterLitersPerHour = 0;
+
         // CRAC breakdown (owned by sim/crisis.js): while broken, sim/heat.js
         // forces duty to 0; repairAt is the game time of the free self-repair.
         this.broken = false;
