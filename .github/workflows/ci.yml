@@ -14,6 +14,27 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # `npm ci`, not `npm install`, would be the stricter choice — but it
+      # cannot run here. `@rolldown/binding-wasm32-wasi` (a fallback binding
+      # under vitest) requires `@emnapi/core` and `@emnapi/runtime` at pinned
+      # alpha versions, and those two are absent from package-lock.json:
+      # npm on macOS never selects that binding, so it never resolves its
+      # dependencies into the lock, and no combination of --package-lock-only,
+      # --os/--cpu, --include=optional or --force adds them from a mac. On
+      # Linux `npm ci` wants them and refuses. That left CI red on every
+      # branch, main included.
+      #
+      # The trade is proportionate for THIS repo and would not be elsewhere:
+      # the game ships zero runtime dependencies (Three.js and Tailwind come
+      # from CDNs, there is no build step), so the lockfile only pins a
+      # linter and a test runner. Reproducibility of the shipped artifact does
+      # not pass through here at all.
+      #
+      # PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: nothing in `check` drives a browser
+      # — the demo recorder uses system Chrome — and the download is hundreds
+      # of MB per run.
+      - run: npm install --no-audit --no-fund
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
       - run: npm run lint
       - run: npm test
