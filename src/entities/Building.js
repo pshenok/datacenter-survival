@@ -39,6 +39,31 @@ export class Building {
         // UPS buffer seconds remaining (owned by sim/power.js).
         this.bufferLeft = type === "ups" ? this.config.bufferSec : 0;
 
+        // ENERGY (kW.s) the battery still owes itself — what actually left
+        // it, not what a nameplate refill would cost. Owned by sim/power.js:
+        // the outage bridge and peak shaving add the energy they really
+        // delivered, the charger works it back down. bufferLeft counts
+        // SECONDS and the bridge spends them at the UPS's full rating
+        // whatever it is carrying, so the two are not interchangeable — a
+        // UPS that bridged a light room has burned its seconds without
+        // burning the matching energy, and billing it for the seconds is
+        // what made a recharge cost three times what the outage did.
+        this.bufferOwedKws = 0;
+
+        // The charger's request this tick (kW), written by sim/power.js's
+        // pull phase so the link ABOVE this UPS has to carry it: a
+        // recharging UPS is a load on its own upstream, clipped by that
+        // upstream's capacity and burning a generator's fuel when the
+        // generator is the one carrying it.
+        this.rechargeReqKw = 0;
+
+        // UPS status this tick (owned by sim/power.js): "idle" | "charging"
+        // | "shaving" (peak shaving, draining into the meter's expensive
+        // window) | "bridging" (existing outage self-grant). Read by the
+        // inspect panel so it never has to re-derive what the buffer is
+        // doing from bufferLeft's trend.
+        this.upsMode = "idle";
+
         // How much demand this link had to refuse this tick because it hit
         // its kW cap. Diagnostic only — written by sim/power.js, read by
         // sim/attribution.js to name the link that starved a rack.
@@ -53,6 +78,13 @@ export class Building {
         // A tripped link is a dead root until the player clicks it.
         this.breakerHeat = 0;
         this.tripped = false;
+
+        // Planned maintenance (owned by sim/maintenance.js). Out-for-service
+        // gear is dead gear — see isDeadGear() in sim/power.js — but it is
+        // NOT a fault: no breaker heat accrues and the ledger names it as
+        // planned work.
+        this.outForService = false;
+        this.serviceLeftSec = 0;
 
         // Generator (owned by sim/power.js + sim/crisis.js): born with a
         // full tank; standby children list is the transfer switch — those

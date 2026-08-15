@@ -59,6 +59,19 @@ function powerCause(rack, byId) {
     let hops = 0;
     let clipped = null;
     while (node && hops++ <= maxHops) {
+        // Checked before the breaker: same most-specific-cause-wins rule
+        // this whole walk already follows (see the function doc above).
+        // openServiceWindow refuses a tripped building and the breaker loop
+        // skips serviced gear entirely (sim/maintenance.js, sim/power.js),
+        // so today the two states never coexist on one node — but this
+        // function does not lean on that holding. Checking outForService
+        // first is what keeps the diagnosis right even if it ever
+        // coexists with tripped again, so a scheduled outage still can't
+        // be misread as "breaker tripped" in the one place whose whole job
+        // is telling the player where the money went.
+        if (node.outForService) {
+            return { cause: "maintenance", id: node.id };
+        }
         if (node.tripped) {
             return { cause: "breaker_tripped", id: node.id };
         }

@@ -4,7 +4,8 @@
 // hands us a freeze() callback so play/pause UI stays game.js's business.
 import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
-import { completedLevels, isLevelUnlocked, levelOrder, earnedBonuses } from "../campaign/campaign.js";
+import { completedLevels, isLevelUnlocked, levelOrder, nextLevelId, earnedBonuses } from "../campaign/campaign.js";
+import { isLab } from "../campaign/lab.js";
 import { showBanner, renderLossLedger } from "./hud.js";
 import { i18n } from "../i18n.js";
 
@@ -29,8 +30,7 @@ export function initCampaignUi(opts) {
         window.launchCampaignLevel(STATE.campaign.levelId);   // rerun, no briefing
     });
     document.getElementById("level-result-next").addEventListener("click", () => {
-        const order = levelOrder();
-        const next = order[order.indexOf(STATE.campaign.levelId) + 1];
+        const next = nextLevelId(STATE.campaign.levelId);
         hideResult();
         if (next) window.startCampaignLevel(next);            // new level → briefing
         else window.backToMenu();
@@ -97,9 +97,14 @@ export function openBriefing(id) {
     document.getElementById("briefing-title").textContent = i18n.t("lv_" + id);
     document.getElementById("briefing-scenario").textContent = i18n.t("lv_" + id + "_scenario");
     document.getElementById("briefing-learn").textContent = i18n.t("lv_" + id + "_learn");
-    const goals = cfg.objectives.map(objectiveLabel);
-    goals.push(i18n.t("brief_time", { s: cfg.timeLimitSec }));
-    for (const b of cfg.bonuses || []) goals.push(`☆ ${objectiveLabel(b)}`);
+    // A sandbox level has no goals and no clock, and printing the time limit
+    // it carries (inert — see CONFIG.campaign.levels.the_lab) would be the
+    // one lie the briefing tells.
+    const goals = cfg.sandbox ? [i18n.t("lab_goal_none")] : cfg.objectives.map(objectiveLabel);
+    if (!cfg.sandbox) {
+        goals.push(i18n.t("brief_time", { s: cfg.timeLimitSec }));
+        for (const b of cfg.bonuses || []) goals.push(`☆ ${objectiveLabel(b)}`);
+    }
     document.getElementById("briefing-goals").innerHTML =
         goals.map((g) => `<li>${g}</li>`).join("");
     document.getElementById("briefing-start").onclick = () => window.launchCampaignLevel(id);
@@ -113,8 +118,11 @@ export function closeBriefing() {
 // ---- in-level UI ---------------------------------------------------------
 export function onLevelStart(id) {
     lastResolved = null;
-    document.getElementById("objectives-panel").classList.remove("hidden");
-    renderObjectives();
+    // The Lab has nothing to track and no clock to count down; its knob
+    // panel (src/ui/lab-panel.js) takes the same slot.
+    const sandbox = !!CONFIG.campaign.levels[id].sandbox;
+    document.getElementById("objectives-panel").classList.toggle("hidden", sandbox);
+    if (!sandbox) renderObjectives();
     showBanner(i18n.t("lv_" + id + "_brief"), 7000);
 }
 
@@ -123,6 +131,9 @@ function objectiveLabel(o) {
     if (o.type === "serve_kwh_during_event") return i18n.t("obj_serve_during", { target: o.target });
     if (o.type === "pue_below") return i18n.t("obj_pue_below", { value: o.value, hold: o.holdSec });
     if (o.type === "money_at_least") return i18n.t("obj_money_left", { target: o.target });
+    if (o.type === "maintenance_without_loss") {
+        return i18n.t("obj_maintenance", { pct: Math.round(o.minServedRatio * 100) });
+    }
     return i18n.t("obj_no_throttle", { hold: o.holdSec });
 }
 
@@ -144,6 +155,11 @@ function objectiveRow(o) {
     } else if (o.type === "pue_below") {
         label = i18n.t("obj_pue_below", { value: o.value, hold: o.holdSec });
         progress = `${Math.floor(Math.min(o.progress, o.holdSec))} / ${o.holdSec}s`;
+    } else if (o.type === "maintenance_without_loss") {
+        label = i18n.t("obj_maintenance", { pct: Math.round(o.minServedRatio * 100) });
+        const orders = STATE.maintenance.orders;
+        const done = orders.filter((m) => m.state === "done").length;
+        progress = `${done} / ${orders.length}`;
     } else {
         label = i18n.t("obj_no_throttle", { hold: o.holdSec });
         progress = `${Math.floor(Math.min(o.progress, o.holdSec))} / ${o.holdSec}s`;
@@ -176,6 +192,10 @@ function renderObjectives() {
 export function tickCampaignUi() {
     const camp = STATE.campaign;
     if (camp.levelId === null) return;
+    // A sandbox level never resolves and has no objective rows to draw, so
+    // there is nothing here for it — and rendering the timer into a hidden
+    // panel every frame would leave a countdown waiting to be un-hidden.
+    if (isLab()) return;
 
     if (camp.done === null) {
         renderObjectives();
@@ -202,8 +222,7 @@ export function tickCampaignUi() {
         if (camp.bonuses.length) {
             sub.textContent += "  " + camp.bonuses.map((b) => (b.done ? "★" : "☆")).join("");
         }
-        const order = levelOrder();
-        const hasNext = order.indexOf(camp.levelId) < order.length - 1;
+        const hasNext = nextLevelId(camp.levelId) !== null;
         next.classList.toggle("hidden", !hasNext);
         retry.classList.add("hidden");
     } else {

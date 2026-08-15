@@ -139,7 +139,12 @@ export function tickMeshes(dt) {
     for (const b of STATE.buildings) {
         if (!b.mesh) continue;
         const base = CONFIG.colors[b.type];
-        if (b.tripped) {
+        // Out for service reads as sky, not as the red of a fault. The ledger
+        // just went to the trouble of distinguishing planned work from a
+        // trip; the room must not undo that.
+        if (b.outForService && b.mesh.material) {
+            b.mesh.material.color.setHex(0x38bdf8);
+        } else if (b.tripped) {
             b.mesh.material.color.setHex(0x7f1d1d);   // open breaker: dark red
         } else if (b.broken) {
             b.mesh.material.color.setHex(0x7f1d1d); // broken CRAC: dark red

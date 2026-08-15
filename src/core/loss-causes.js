@@ -12,6 +12,7 @@ export const LOSS_CAUSES = {
     link_clip: { key: "loss_link_clip", severity: "degraded", color: "#f59e0b" },
     brownout: { key: "loss_brownout", severity: "degraded", color: "#fb923c" },
     breaker_tripped: { key: "loss_breaker", severity: "dropped", color: "#ef4444" },
+    maintenance: { key: "loss_maintenance", severity: "dropped", color: "#38bdf8" },
     dead_chain: { key: "loss_dead_chain", severity: "dropped", color: "#ef4444" },
     battery_empty: { key: "loss_battery_empty", severity: "dropped", color: "#ef4444" },
     tank_dry: { key: "loss_tank_dry", severity: "dropped", color: "#ef4444" },

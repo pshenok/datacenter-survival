@@ -33,6 +33,46 @@ export const CONFIG = {
             // Seconds of full-subtree draw it can carry when its source goes
             // dark (a blip, not a blackout — generators are post-MVP).
             bufferSec: 8,
+            // ---- The battery, as energy (STATE.peakShave) ----------------
+            // A buffer-second is one second of capacityKw draw, so the
+            // buffer's full energy content is capacityKw * bufferSec —
+            // 288 kW.s here. Every path that spends it (the outage bridge,
+            // peak shaving) and the one that puts it back are measured in
+            // that currency, or the meter invents energy.
+            //
+            // Recharging is NOT free. A real battery gives back less than
+            // you put in — some of the draw becomes heat in the cells and
+            // the charger, not stored charge — so putting a kW.s back costs
+            // more than that kW.s is worth delivered. roundTripEff is the
+            // fraction of the charger's draw that actually lands in the
+            // battery; the rest is the loss.
+            //
+            // The charger is sized from the UPS's OWN capacity, not as a
+            // flat kW: rechargeRate is the share of capacityKw that lands
+            // in the battery per second, so the charger's draw is
+            // capacityKw * rechargeRate / roundTripEff = 36 * 0.25 / 0.9 =
+            // 10 kW here, and a bigger or smaller UPS scales with it. At
+            // 0.25 a battery emptied at the UPS's full rating takes
+            // bufferSec / 0.25 = 32 s to come back — the pace it always
+            // recharged at.
+            //
+            // What is NOT flat any more is the ENERGY billed. The charger
+            // restores what actually left the battery (Building.bufferOwedKws,
+            // written by sim/power.js), not a nameplate refill: a UPS that
+            // bridged a 12 kW room for 8 s gave up 96 kW.s, not 288, and
+            // pays for 96/roundTripEff — a third of the old bill, over a
+            // third of the old window. Billing a full nameplate refill after
+            // a light discharge is what doubled a small room's PUE for 32 s
+            // and made the pue_hold contract arithmetically unwinnable after
+            // any outage.
+            //
+            // Without a real cost here, peak shaving is free money: charge
+            // low, discharge high, nothing given back either way — exactly
+            // what this project's mechanic-proposal form rejects ("if the
+            // answer to 'when would you NOT want this?' is 'never', the
+            // mechanic is not ready").
+            rechargeRate: 0.25,
+            roundTripEff: 0.9,
         },
         pdu: {
             name: "PDU",
@@ -303,6 +343,14 @@ export const CONFIG = {
             { id: "ch2", titleKey: "ch2_title", levels: ["fuel_clock"] },
             { id: "ch3", titleKey: "ch3_title", levels: ["over_cooled", "one_bus", "cold_room", "two_utilities"] },
             { id: "ch4", titleKey: "ch4_title", levels: ["water_loop", "single_point_of_cold"] },
+            { id: "ch5", titleKey: "ch5_title", levels: ["night_shift"] },
+            // The Lab hangs off the END of the order deliberately: nothing is
+            // downstream of it, so a level that can never be COMPLETED can
+            // never gate one. `alwaysUnlocked` is what makes it reachable
+            // from there on a fresh profile (tests/lab.test.mjs pins both
+            // halves, including that no alwaysUnlocked level is ever another
+            // level's predecessor — move this entry and that test goes red).
+            { id: "lab", titleKey: "ch_lab_title", levels: ["the_lab"] },
         ],
         levels: {
             // Teach: the delivery chain. Wire feed→transformer→ups→pdu→rack
@@ -590,6 +638,114 @@ export const CONFIG = {
                     ],
                 },
                 objectives: [{ type: "serve_kwh", target: 70 }],
+            },
+
+            // ---- Chapter 5: TIER III --------------------------------------
+
+            // Teach: concurrent maintainability is a CAPACITY property, not a
+            // spares property. The room is handed over working and correctly
+            // sized for NORMAL operation: two buses, 18 kW of racks, nobody
+            // overloaded. It is only wrong for the one thing Tier III
+            // actually grades — being serviceable.
+            //
+            // Probed: transferring the load onto the surviving bus puts
+            // 21 kW (18 kW of racks plus the CRAC) on a 16 kW rating, its
+            // breaker opens, and the hall goes to ZERO. The naive play does
+            // not fall short, it fails harder than doing nothing. A third
+            // bus makes any single window survivable.
+            night_shift: {
+                startMoney: 120,          // one PDU is 50 — the fix is affordable, the slack is not
+                timeLimitSec: 200,
+                demandKw: 18,
+                script: [],
+                maintenance: {
+                    orders: [
+                        { target: 2, durationSec: 25, bySec: 90 },
+                        { target: 3, durationSec: 25, bySec: 170 },
+                    ],
+                },
+                objectives: [
+                    { type: "maintenance_without_loss", minServedRatio: 0.95 },
+                ],
+                preBuilt: {
+                    buildings: [
+                        { type: "grid_feed", gx: 3, gz: 8 },     // 0
+                        { type: "transformer", gx: 6, gz: 8 },   // 1
+                        { type: "pdu", gx: 9, gz: 5 },           // 2  <- first order
+                        { type: "pdu", gx: 9, gz: 11 },          // 3  <- second order
+                        { type: "rack", gx: 13, gz: 4 },         // 4
+                        { type: "rack", gx: 13, gz: 8 },         // 5
+                        { type: "rack", gx: 13, gz: 12 },        // 6
+                        { type: "crac", gx: 16, gz: 8 },         // 7
+                    ],
+                    wires: [
+                        [0, 1],
+                        [1, 2], [1, 3],
+                        [2, 4], [3, 5], [2, 6],
+                        [3, 7],
+                    ],
+                },
+            },
+
+            // ---- THE LAB: a rehearsal room, not a level -----------------
+            // Every crisis in this game is on a schedule, so understanding
+            // the transfer switch costs 220 s of survival and gets you one
+            // look at it. Here the phenomena are on buttons and the room is
+            // yours: no objectives, no win, no loss, no clock.
+            //
+            // Two flags carry that, and neither is a workaround:
+            //   sandbox        — campaign.js skips resolution ENTIRELY (no
+            //                    objective sweep, no failConditions floors,
+            //                    no endsAt), and demand.js declines to set
+            //                    gameOver. An empty objective list alone
+            //                    would resolve as WON on tick one, because
+            //                    the sweep starts allDone = true.
+            //   alwaysUnlocked — open on a fresh profile. A rehearsal room
+            //                    behind thirteen wins is a trophy.
+            //
+            // The room: one chain with a UPS, a standby generator already
+            // wired to the transformer, three racks and a CRAC, all on one
+            // 16 kW bus. Small enough to read at a glance, and every lesson
+            // is one knob away — fire an outage and the UPS bridges the
+            // generator's 3 s cutover; wind demand past 18 kW and the bus
+            // carries 21 kW on a 16 kW rating until its breaker opens; push
+            // ambient (or fire a heatwave) and watch the CRAC answer it.
+            // $2000 is for extending the room, not for surviving it.
+            the_lab: {
+                sandbox: true,
+                alwaysUnlocked: true,
+                startMoney: 2000,
+                // INERT under `sandbox` — tickCampaign returns before it
+                // ever reads endsAt. Deliberately a real number rather than
+                // Infinity: the machine test runs the Lab three times past
+                // it and still finds done === null, which proves the FLAG
+                // stops the clock. An Infinity would prove nothing.
+                timeLimitSec: 120,
+                demandKw: 12,
+                tariffCycle: true,      // the meter runs; the knob pins it
+                script: [],
+                objectives: [],
+                preBuilt: {
+                    buildings: [
+                        { type: "grid_feed", gx: 3, gz: 8 },     // 0
+                        { type: "transformer", gx: 6, gz: 8 },   // 1
+                        { type: "ups", gx: 9, gz: 8 },           // 2
+                        { type: "pdu", gx: 12, gz: 8 },          // 3
+                        { type: "rack", gx: 16, gz: 6 },         // 4
+                        { type: "rack", gx: 16, gz: 8 },         // 5
+                        { type: "rack", gx: 16, gz: 10 },        // 6
+                        { type: "crac", gx: 18, gz: 8 },         // 7
+                        { type: "generator", gx: 6, gz: 12 },    // 8
+                    ],
+                    wires: [
+                        [0, 1], [1, 2], [2, 3],
+                        [3, 4], [3, 5], [3, 6], [3, 7],
+                    ],
+                    // The transfer switch, pre-wired: the whole chain below
+                    // the transformer falls to the generator when the city
+                    // feed dies, and the UPS bridges the cutover.
+                    standby: [[8, 1]],
+                },
             },
         },
     },

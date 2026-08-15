@@ -4,7 +4,7 @@
 import { CONFIG } from "../core/config.js";
 import { i18n } from "../i18n.js";
 
-const TABS = ["basics", "buildings", "power", "heat", "cooling", "tariff", "events", "losses", "controls"];
+const TABS = ["basics", "buildings", "power", "heat", "cooling", "tariff", "shaving", "events", "losses", "controls"];
 let activeTab = "basics";
 
 function buildingRows() {
@@ -36,6 +36,31 @@ function bandRows() {
     }).join("");
 }
 
+// Every number here is derived from CONFIG.buildings.ups, for the same
+// reason the buildings table and the tariff bands are: a page that tells the
+// player what a round trip costs must not be able to drift from the code
+// that charges them for it.
+function shavingRows() {
+    const u = CONFIG.buildings.ups;
+    const chargerKw = (u.capacityKw * u.rechargeRate) / u.roundTripEff;
+    const storedKwh = (u.capacityKw * u.bufferSec) / 60;   // billing-hour scale
+    const spread = CONFIG.tariff.bands[1].mult / CONFIG.tariff.bands[0].mult;
+    const rows = [
+        [i18n.t("faq_shave_row_energy"), `${storedKwh.toFixed(1)} kWh`],
+        [i18n.t("faq_shave_row_eff"), `${Math.round(u.roundTripEff * 100)}%`],
+        [i18n.t("faq_shave_row_charger"), `${chargerKw.toFixed(1)} kW`],
+        [i18n.t("faq_shave_row_refill"), `${(u.bufferSec / u.rechargeRate).toFixed(0)}s`],
+        [i18n.t("faq_shave_row_breakeven"), `x${(1 / u.roundTripEff).toFixed(2)}`],
+        [i18n.t("faq_shave_row_spread"), `x${spread.toFixed(2)}`],
+    ];
+    return rows.map(([label, value]) =>
+        `<div class="flex justify-between py-1 border-b border-gray-800">
+            <span class="text-white font-bold">${label}</span>
+            <span class="text-gray-400">${value}</span>
+        </div>`
+    ).join("");
+}
+
 function tabContent() {
     switch (activeTab) {
         case "basics": return `
@@ -63,6 +88,13 @@ function tabContent() {
             <div class="text-xs my-2">${bandRows()}</div>
             <p>${i18n.t("faq_tariff_2")}</p>
             <p class="text-cyan-300">${i18n.t("faq_tariff_3")}</p>`;
+        // Same rule as the tariff bands above: generated, never hand-written.
+        case "shaving": return `
+            <p>${i18n.t("faq_shave_1")}</p>
+            <div class="text-xs my-2">${shavingRows()}</div>
+            <p>${i18n.t("faq_shave_2")}</p>
+            <p>${i18n.t("faq_shave_3")}</p>
+            <p class="text-cyan-300">${i18n.t("faq_shave_4")}</p>`;
         case "events": return `
             <p>${i18n.t("faq_events_1")}</p>
             <p>${i18n.t("faq_events_2")}</p>

@@ -33,8 +33,20 @@ const N = CONFIG.gridSize;
 // Diffusion double buffer — allocated once at module scope, reused per tick.
 const scratch = new Float32Array(N * N);
 
+// The field's floor: what dissipation pulls every cell toward, what a CRAC
+// may never cool below, and the zero point every localExcess is measured
+// from.
+//
+// The Lab's ambient knob (STATE.lab.ambientC) moves it. null everywhere
+// else, which is the whole of the inertness guarantee here — CONFIG.heat is
+// never written, because a written-back CONFIG value survives resetState()
+// into every later run (see docs/ARCHITECTURE.md). A heatwave still RAISES
+// the floor and can never lower it: without the max, a room the player had
+// set to 40 °C would get COOLER the moment they fired a heatwave at it, and
+// the button would be teaching the opposite of what a heatwave is.
 function currentAmbientC() {
-    return STATE.heatwave.active ? CONFIG.heat.heatwaveAmbientC : CONFIG.heat.ambientC;
+    const base = STATE.lab.ambientC === null ? CONFIG.heat.ambientC : STATE.lab.ambientC;
+    return STATE.heatwave.active ? Math.max(base, CONFIG.heat.heatwaveAmbientC) : base;
 }
 
 function currentDiffusion() {

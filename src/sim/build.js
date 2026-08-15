@@ -10,6 +10,7 @@ import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
 import { Building } from "../entities/Building.js";
 import { wireBuildings, unwire } from "./power.js";
+import { missOrdersForBuilding } from "./maintenance.js";
 
 let wireId = 1;
 
@@ -63,12 +64,16 @@ export function dropWireRecord(childId, standby = false) {
 
 // Demolish: cut this building's own feed, cut its children loose (they keep
 // their standby edges — a paid transfer switch outlives its primary), drop
-// every standby edge pointing AT it, refund half. Returns the wire records
-// the caller must dispose.
+// every standby edge pointing AT it, refund half, and miss any work order
+// still open on it — an order cannot survive the gear it targets, or
+// tickMaintenance counts an orphaned order down to "done" and the level
+// credits completed maintenance on a building that no longer exists. Returns
+// the wire records the caller must dispose.
 export function demolishBuilding(b) {
     const dropped = [];
     const take = (rec) => { if (rec) dropped.push(rec); };
 
+    missOrdersForBuilding(b.id);
     unwire(b);
     take(dropWireRecord(b.id));
     take(dropWireRecord(b.id, true));

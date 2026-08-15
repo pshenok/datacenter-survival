@@ -19,9 +19,12 @@ import { renderPalette, refreshAffordability } from "./src/ui/toolbar.js";
 import { setTool, tickInspect } from "./src/input/handlers.js";
 import { tutorial, showCeremony, shouldOfferTutorial, tickTutorial, notifyOverlayToggled } from "./src/ui/tutorial.js";
 import { openFaq, closeFaq } from "./src/ui/faq.js";
-import { tickCampaign, startLevelState } from "./src/campaign/campaign.js";
+import { tickCampaign, startLevelState, startLevelMaintenance } from "./src/campaign/campaign.js";
+import { tickMaintenance } from "./src/sim/maintenance.js";
 import { applyPreBuilt } from "./src/campaign/prebuilt.js";
 import { initCampaignUi, openCampaign, closeCampaign, openBriefing, closeBriefing, onLevelStart, tickCampaignUi } from "./src/ui/campaign-ui.js";
+import { initLabPanel, tickLabPanel, hideLabPanel, resetLabPanel } from "./src/ui/lab-panel.js";
+import { setLabDemandKw, setLabAmbientC, setLabTariffBand, fireLabEvent, resetLab } from "./src/campaign/lab.js";
 import { i18n } from "./src/i18n.js";
 
 let lastTime = 0;
@@ -36,6 +39,7 @@ let seenContractDone = null;
 let gameOverShown = false;
 let outageWasActive = false;
 let tariffWasActive = false;
+let missedOrders = new Set();
 
 function tick(dt) {
     // While the tutorial runs, game time is frozen: demand stays at the gentle
@@ -50,6 +54,7 @@ function tick(dt) {
     resolvePower(dt);
     tickHeat(dt);
     tickContracts(dt, STATE.elapsedGameTime);   // judged on THIS tick's facts
+    tickMaintenance(dt, STATE.elapsedGameTime);
     tickCampaign(dt, STATE.elapsedGameTime);    // scripted events + objectives, judged last
 
     // UI-side reactions to sim facts
@@ -109,6 +114,14 @@ function tick(dt) {
     }
     trippedIds = nowTripped;
 
+    // Work orders: issued once at level start, and the miss is the verdict.
+    for (const o of STATE.maintenance.orders) {
+        if (o.state === "missed" && !missedOrders.has(o.buildingId)) {
+            missedOrders.add(o.buildingId);
+            showBanner(i18n.t("maint_missed"), 6000);
+        }
+    }
+
     // Contracts: new offer, then completion/expiry.
     const c = STATE.contract;
     if (c.key && c.id !== seenContractId) {
@@ -160,6 +173,7 @@ function animate(time) {
     if (STATE.isRunning && dt > 0) tick(dt);
     tickTutorial();
     tickCampaignUi();
+    tickLabPanel();
 
     tickMeshes(rawDt);
     tickBadges(rawDt);
@@ -178,6 +192,10 @@ function clearWorld() {
     resetHudStats();
     clearBadges();
     renderInspect(null);
+    // The knob panel is rebuilt per level start, so a Lab run cannot leave
+    // its listeners (or its readings) behind in the next room.
+    resetLabPanel();
+    hideLabPanel();
     warnedWaveAt = 0;
     warnedBandKey = null;
     heatwaveWasActive = false;
@@ -189,6 +207,7 @@ function clearWorld() {
     gameOverShown = false;
     outageWasActive = false;
     tariffWasActive = false;
+    missedOrders = new Set();
 }
 
 // ---- window boundary (index.html inline handlers) ----
@@ -204,6 +223,7 @@ function beginRun() {
     setTool("select");
     refreshAffordability();
     syncPlayPauseUi();
+    syncPeakShaveUi(); // resetState() (inside clearWorld) severs the toggle
 }
 window.startGame = () => {
     beginRun();
@@ -239,6 +259,9 @@ window.launchCampaignLevel = (id) => {
     // A diagnosis level hands the player a room that is already running:
     // the pure builder makes the topology, this pass gives it bodies.
     const prebuilt = applyPreBuilt(id);
+    // Work orders index into the room applyPreBuilt just built, so this must
+    // run after it, not inside startLevelState.
+    startLevelMaintenance(id, prebuilt);
     for (const b of prebuilt) attachMesh(b);
     for (const w of STATE.wires) {
         const from = STATE.buildings.find((x) => x.id === w.from);
@@ -267,7 +290,7 @@ window.briefingBack = () => {
 };
 window.backToMenu = () => {
     STATE.isRunning = false;
-    for (const id of ["gameover-modal", "objectives-panel", "pause-menu-modal", "briefing-modal", "level-result-modal"]) {
+    for (const id of ["gameover-modal", "objectives-panel", "lab-panel", "pause-menu-modal", "briefing-modal", "level-result-modal"]) {
         document.getElementById(id).classList.add("hidden");
     }
     document.getElementById("main-menu").classList.remove("hidden");
@@ -315,12 +338,54 @@ window.togglePause = () => {
     syncPlayPauseUi();
 };
 window.toggleThermalOverlay = () => { notifyOverlayToggled(); return toggleThermalOverlay(); };
+
+// ---- peak shaving toggle --------------------------------------------------
+// A player choice, not a diagnostic: owned here (the composition root), the
+// same place STATE.tariff.cycleOn and STATE.timeScale get written — src/ui/*
+// and src/input/* only ever read STATE, per the architecture boundary.
+function syncPeakShaveUi() {
+    const btn = document.getElementById("btn-peakshave");
+    if (!btn) return;
+    // Own exactly one colour class at a time. Leaving both on the element
+    // makes the winner Tailwind's emission order rather than the toggle —
+    // the pause and overlay buttons avoid it the same way.
+    btn.classList.toggle("text-emerald-300", STATE.peakShave.on);
+    btn.classList.toggle("text-gray-300", !STATE.peakShave.on);
+}
+window.togglePeakShave = () => {
+    // Same gate as togglePause: no arming a mechanic from the menu, and none
+    // behind a result modal. Without it the button paints lit over a room
+    // that does not exist yet.
+    if (!STATE.isRunning || STATE.gameOver !== null || STATE.campaign.done !== null) return;
+    STATE.peakShave.on = !STATE.peakShave.on;
+    syncPeakShaveUi();
+};
+// ---- The Lab's knobs ------------------------------------------------------
+// Same boundary as togglePeakShave above: src/ui/lab-panel.js draws the panel
+// and reads STATE, and every write goes through campaign/lab.js from HERE.
+// Each of these refuses unless a sandbox level is running (STATE.lab.on), so
+// there is nothing to gate a second time — but a refused Fire is worth
+// saying out loud, because a button that silently does nothing reads as
+// broken rather than as "that window is already open".
+const labHandlers = {
+    setDemandKw: (kw) => setLabDemandKw(kw),
+    setAmbientC: (c) => setLabAmbientC(c),
+    setTariffBand: (mode) => setLabTariffBand(mode),
+    fire: (kind) => {
+        if (!fireLabEvent(kind)) showBanner(i18n.t("lab_fire_refused"), 3500);
+    },
+    reset: () => {
+        if (resetLab()) showBanner(i18n.t("lab_reset_done"), 2500);
+    },
+};
+
 window.setTool = setTool;
 window.showHelp = openFaq;
 window.closeHelp = closeFaq;
 
 // ---- boot ----
 renderPalette((type) => setTool(type));
+initLabPanel(labHandlers);
 initCampaignUi({
     freeze: () => {
         STATE.timeScale = 0;

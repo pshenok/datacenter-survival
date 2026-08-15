@@ -6,6 +6,7 @@ import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
 import { placeBuilding as simPlace, connect as simConnect, demolishBuilding as simDemolish } from "../sim/build.js";
 import { repairCrac, orderFuel, resetBreaker } from "../sim/crisis.js";
+import { pendingOrderFor, openServiceWindow } from "../sim/maintenance.js";
 import { camera, cameraTarget, renderer, worldToGrid, gridToWorld, buildingGroup } from "../ui/scene.js";
 import { attachMesh, addWireMesh, removeWireMesh, removeMesh } from "../ui/meshes.js";
 import { markActiveTool, refreshAffordability } from "../ui/toolbar.js";
@@ -103,10 +104,29 @@ function handlePrimary(e) {
             showBanner(i18n.t("repair_no_funds", { cost: CONFIG.events.cracBreakdown.repairCost }), 2500);
         }
     }
-    // Clicking a tripped link pushes its handle back in.
-    if (hit.building && hit.building.tripped) {
+    // Clicking a tripped link pushes its handle back in. Captured before the
+    // reset: gear that is ALSO a maintenance target must not go straight
+    // from "tripped" to "out for service" in the same click, or a bus that
+    // is overloaded for a real reason could be pulled from service without
+    // the player ever seeing whether that was safe.
+    const wasTripped = !!(hit.building && hit.building.tripped);
+    if (wasTripped) {
         resetBreaker(hit.building);
         showBanner(i18n.t("breaker_reset"), 3000);
+    }
+    // Clicking gear with a pending work order opens its service window. Same
+    // click as pushing a breaker handle back in — the player already knows
+    // that gesture, and a second tool for a once-a-level action is clutter —
+    // unless the gear was tripped this same click: openServiceWindow refuses
+    // (and mutates nothing) over an unresolved trip, so a bus that just had
+    // its fault cleared gets a banner saying the window still needs another
+    // click, not the "opened" banner claiming it already happened.
+    if (hit.building && pendingOrderFor(hit.building)) {
+        if (wasTripped) {
+            showBanner(i18n.t("maint_blocked", { name: i18n.t("b_" + hit.building.type) }), 4000);
+        } else if (openServiceWindow(hit.building)) {
+            showBanner(i18n.t("maint_opened", { name: i18n.t("b_" + hit.building.type) }), 4000);
+        }
     }
     // Clicking a generator below a full tank orders the refill truck.
     if (hit.building && hit.building.type === "generator") {

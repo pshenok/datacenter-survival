@@ -29,7 +29,13 @@ export const STATE = {
     demandFixedKw: null,
     // power accounting (owned by sim/power.js)
     itDrawKw: 0,            // racks only — the PUE denominator
-    totalDrawKw: 0,         // racks + cooling — what the power bill charges
+    totalDrawKw: 0,         // racks + cooling + UPS recharge — total facility
+                             // draw; PUE's numerator, UNCHANGED in meaning by
+                             // peak shaving (see batteryKw below)
+    // kW of totalDrawKw sourced from a UPS buffer THIS tick (peak shaving),
+    // not from the grid. sim/demand.js bills (totalDrawKw - batteryKw) —
+    // the meter, not the facility-draw/PUE number, is what shaving touches.
+    batteryKw: 0,
 
     // economy & standing
     money: CONFIG.economy.startMoney,
@@ -64,6 +70,11 @@ export const STATE = {
         cycleOn: false, cycleMul: 1, band: null,
     },
 
+    // Scheduled work orders (owned by sim/maintenance.js). Empty outside the
+    // levels that declare them, which is what keeps the mechanic invisible
+    // everywhere it is not being taught.
+    maintenance: { orders: [] },
+
     // rolling mini-contract (owned by sim/contracts.js). key === null means
     // no contract yet; done: null while running, "paid" | "failed" once
     // resolved (the resolved contract stays visible until the next draw).
@@ -78,6 +89,26 @@ export const STATE = {
     // the run's ledger; blame carries per-building shares for the floating
     // badges. Diagnostic only — nothing in the simulation reads it back.
     losses: { tickKw: {}, totalKwh: {}, blame: [] },
+
+    // Peak shaving (owned by sim/power.js reading it; written only by the
+    // player, via game.js's togglePeakShave — see src/ui/* boundary rule).
+    // While on, a UPS with a live upstream and a charged buffer serves its
+    // subtree from the buffer instead of the grid. Off by default: the
+    // mechanic must be invisible until chosen, same as STATE.tariff.cycleOn.
+    peakShave: { on: false },
+
+    // THE LAB (owned by campaign/lab.js; written only by the player, through
+    // game.js, exactly like peakShave above). A rehearsal room: the knobs
+    // summon the phenomena the rest of the game puts on a schedule.
+    //   on        — a level flagged `sandbox` is running. Set by
+    //               startLevelState, false everywhere else, and the single
+    //               condition every knob checks — which is what keeps the
+    //               Lab inert in the thirteen proven levels and in survival.
+    //   ambientC  — the heat field's ambient floor (sim/heat.js), or null
+    //               for CONFIG.heat.ambientC. NEVER write CONFIG.
+    //   tariffBand— a pinned day/night band key (sim/demand.js), or null to
+    //               let the clock run the cycle.
+    lab: { on: false, ambientC: null, tariffBand: null },
 
     // meta
     gameOver: null,         // null | "bankrupt" | "reputation"
@@ -97,6 +128,7 @@ export function resetState() {
     STATE.demandFixedKw = null;
     STATE.itDrawKw = 0;
     STATE.totalDrawKw = 0;
+    STATE.batteryKw = 0;
     STATE.money = CONFIG.economy.startMoney;
     STATE.reputation = CONFIG.sla.startReputation;
     STATE.heatwave = { active: false, endsAt: 0, nextAt: CONFIG.events.heatwave.firstAtSec };
@@ -107,9 +139,12 @@ export function resetState() {
         active: false, multiplier: 1, endsAt: 0, nextAt: null,
         cycleOn: false, cycleMul: 1, band: null,
     };
+    STATE.maintenance = { orders: [] };
     STATE.contract = { id: 0, key: null, progress: 0, target: 0, reward: 0, endsAt: 0, done: null, nextAt: null };
     STATE.campaign = { levelId: null, objectives: [], bonuses: [], endsAt: 0, done: null, reason: null };
     STATE.losses = { tickKw: {}, totalKwh: {}, blame: [] };
+    STATE.peakShave = { on: false };
+    STATE.lab = { on: false, ambientC: null, tariffBand: null };
     STATE.gameOver = null;
 }
 

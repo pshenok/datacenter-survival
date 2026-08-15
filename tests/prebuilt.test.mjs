@@ -12,11 +12,12 @@ import { tickDemand, tickEvents } from "../src/sim/demand.js";
 import { tickHeat } from "../src/sim/heat.js";
 import { tickCrisis } from "../src/sim/crisis.js";
 import { tickContracts } from "../src/sim/contracts.js";
-import { tickCampaign, startLevelState, levelCfg } from "../src/campaign/campaign.js";
+import { tickCampaign, startLevelState, levelCfg, startLevelMaintenance } from "../src/campaign/campaign.js";
 import { applyPreBuilt, preBuiltSpec, hasPreBuilt } from "../src/campaign/prebuilt.js";
 import { placeBuilding, demolishBuilding, connect, resetWireIds } from "../src/sim/build.js";
 import { utilityOf, feedIsDark } from "../src/sim/power.js";
 import { resetBreaker } from "../src/sim/crisis.js";
+import { openServiceWindow, tickMaintenance } from "../src/sim/maintenance.js";
 
 const DT = 0.05;
 const rngZero = () => 0;
@@ -342,5 +343,128 @@ describe("L12 single_point_of_cold — the day the plant stops", () => {
         }
         runLevel("single_point_of_cold");
         expect(STATE.campaign.done).toBe("won");
+    });
+});
+
+describe("L13 night_shift — Tier III is about being serviceable", () => {
+    function startShift() {
+        resetState();
+        resetBuildingIds();
+        resetWireIds();
+        expect(startLevelState("night_shift")).toBe(true);
+        const made = applyPreBuilt("night_shift");
+        startLevelMaintenance("night_shift", made);
+        return made;
+    }
+
+    function runShift() {
+        const limit = levelCfg("night_shift").timeLimitSec + 5;
+        for (let i = 0; i < limit / DT; i++) {
+            if (STATE.campaign.done !== null) return;
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            tickEvents(DT, t);
+            tickCrisis(DT, t, rngZero);
+            tickDemand(DT, t);
+            resolvePower(DT);
+            tickHeat(DT);
+            tickMaintenance(DT, t);
+            tickCampaign(DT, t);
+        }
+    }
+
+    it("LOSE (passive): do nothing and the first work order's deadline ends the level", () => {
+        startShift();
+        runShift();
+        expect(STATE.campaign.done).toBe("failed");
+        expect(STATE.campaign.reason).toBe("fail_maintenance");
+        // The level resolves the instant the FIRST order misses its deadline
+        // (bySec 90) — the second order (bySec 170) never gets the chance to
+        // miss its own, and is still sitting "pending" when the clock stops.
+        expect(STATE.maintenance.orders[0].state).toBe("missed");
+        expect(STATE.maintenance.orders[1].state).toBe("pending");
+    });
+
+    it("LOSE (naive): move the load onto the surviving bus and TRIP it", () => {
+        const made = startShift();
+        const [, , pduA, pduB, r1, , r3] = made;
+        // The obvious play: shove both of A's racks across to B. B already
+        // carries a rack and the CRAC, so this alone puts 21 kW of demand
+        // (18 of racks + the CRAC) on a 16 kW bus — the breaker opens
+        // before anyone has even opened A's service window.
+        connect(pduB, r1);
+        connect(pduB, r3);
+        for (let i = 0; i < 200; i++) {          // let the transfer settle
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            tickDemand(DT, t); resolvePower(DT); tickHeat(DT); tickMaintenance(DT, t);
+        }
+        expect(pduB.tripped).toBe(true);
+        // A itself is now empty (both its racks left), so its own window
+        // opens clean — the failure is not "can't do the work", it is
+        // "doing the work is safe, the ROOM behind it was not".
+        expect(openServiceWindow(pduA)).toBe(true);
+        const openedAt = STATE.elapsedGameTime;
+        runShift();
+        expect(STATE.campaign.done).toBe("failed");
+        // Not a near miss: 21 kW on a 16 kW bus opens it and the hall is dark.
+        expect(pduB.tripped).toBe(true);
+        expect(STATE.servedKw).toBe(0);
+        // The headline claim is that the trip lands almost immediately — not
+        // merely that the run eventually fails via order 2's own deadline
+        // (bySec 170), which it would do anyway even with a neutered
+        // served-ratio check. Pin the mechanism: the verdict lands within
+        // about a second of opening the window, and order 2 never got the
+        // chance to miss its own deadline.
+        expect(STATE.elapsedGameTime - openedAt).toBeLessThan(1);
+        expect(STATE.maintenance.orders[1].state).toBe("pending");
+    });
+
+    it("WIN: a third bus makes any single window survivable", () => {
+        const made = startShift();
+        const [, xf, pduA, pduB, r1, , r3] = made;
+        const pduC = placeBuilding("pdu", 9, 15);
+        expect(typeof pduC).not.toBe("string");
+        expect(STATE.money).toBeGreaterThanOrEqual(0);   // $120 covers the $50 bus
+        connect(xf, pduC);
+
+        // Order 1: transfer everything off A, then open its window.
+        connect(pduC, r1);
+        connect(pduB, r3);
+        for (let i = 0; i < 200; i++) {
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            tickDemand(DT, t); resolvePower(DT); tickHeat(DT); tickMaintenance(DT, t);
+        }
+        expect(pduB.tripped).toBe(false);   // B now carries 15 kW — inside its 16 kW rating
+        expect(openServiceWindow(pduA)).toBe(true);
+        for (let i = 0; i < 30 / DT; i++) {
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            tickDemand(DT, t); resolvePower(DT); tickHeat(DT);
+            tickMaintenance(DT, t); tickCampaign(DT, t);
+        }
+        expect(STATE.maintenance.orders[0].state).toBe("done");
+        expect(STATE.campaign.objectives[0].failed).toBe(false);
+
+        // Order 2: same move, the other way — B's turn is next, so pull its
+        // remaining rack over to A (now free) and give C the one A had.
+        const r2 = STATE.buildings.find((b) => b.id === made[5].id);
+        connect(pduA, r2);
+        connect(pduC, r3);
+        for (let i = 0; i < 200; i++) {
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            tickDemand(DT, t); resolvePower(DT); tickHeat(DT); tickMaintenance(DT, t);
+        }
+        // By now every rack has left B — only the CRAC (index 7) is still
+        // wired to it, exactly as the level hands it over. Losing the CRAC
+        // for the 25s window does not starve any rack of power, and with no
+        // heatwave scripted here it never builds enough heat to throttle one
+        // either, so B's window is survivable without moving the CRAC too.
+        expect(openServiceWindow(pduB)).toBe(true);
+        runShift();
+        expect(STATE.campaign.done).toBe("won");
+        expect(STATE.maintenance.orders.every((o) => o.state === "done")).toBe(true);
     });
 });

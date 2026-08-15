@@ -7,6 +7,8 @@ import { i18n } from "../i18n.js";
 import { lossLedger } from "../sim/attribution.js";
 import { LOSS_CAUSES } from "../core/loss-causes.js";
 import { utilityOf, feedIsDark } from "../sim/power.js";
+import { tariffBandAt } from "../sim/demand.js";
+import { pendingOrderFor, activeOrderFor } from "../sim/maintenance.js";
 
 const el = (id) => document.getElementById(id);
 let bestPue = Infinity;
@@ -37,13 +39,21 @@ export function tickHud() {
     const tariffEl = el("hud-tariff");
     if (tariffEl) {
         const t = STATE.tariff;
-        const effective = (t.active ? t.multiplier : 1) * (t.cycleOn ? t.cycleMul : 1);
+        // STATE.tariff.band and .cycleMul are written by tickDemand, so they
+        // are still null/1 for the whole of a PAUSED start — which is exactly
+        // when a player is planning against the meter. Falling back to
+        // tariffBandAt() (pure, and knowable in advance by design) is what
+        // makes the pill readable then; without it the band label rendered
+        // the literal key `tariff_band_null` over the money for the entire
+        // build phase, in free play and in The Lab alike.
+        const band = t.band !== null ? { key: t.band, mult: t.cycleMul } : tariffBandAt(STATE.elapsedGameTime);
+        const effective = (t.active ? t.multiplier : 1) * (t.cycleOn ? band.mult : 1);
         const show = t.active || t.cycleOn;
         if (show) {
             tariffEl.textContent = t.active
                 ? i18n.t("tariff_pill", { mult: round2(effective) })
                 : i18n.t("tariff_band_pill", {
-                    band: i18n.t("tariff_band_" + t.band),
+                    band: i18n.t("tariff_band_" + band.key),
                     mult: round2(effective),
                 });
             // Amber is the alarm colour and belongs to the expensive half
@@ -53,6 +63,28 @@ export function tickHud() {
                 + (effective > 1 ? "text-amber-300" : "text-emerald-300");
         }
         tariffEl.classList.toggle("hidden", !show);
+    }
+    // Peak-shave pill: the toggle alone tells a player nothing they can
+    // learn from — the whole lesson is WHAT it is saving, right now, in the
+    // same units the tariff pill already speaks (kW and $), or the mechanic
+    // stays invisible even while it is running.
+    const psEl = el("hud-peakshave");
+    if (psEl) {
+        const ps = STATE.peakShave;
+        if (ps.on && STATE.batteryKw > 0.05) {
+            const t = STATE.tariff;
+            const mult = (t.active ? t.multiplier : 1) * (t.cycleOn ? t.cycleMul : 1);
+            const rate = STATE.batteryKw * CONFIG.economy.powerCostPerKwh * mult;
+            psEl.textContent = i18n.t("peakshave_active", { kw: STATE.batteryKw.toFixed(1), rate: rate.toFixed(2) });
+            psEl.className = "text-[9px] font-bold uppercase tracking-wide text-emerald-300";
+            psEl.classList.remove("hidden");
+        } else if (ps.on) {
+            psEl.textContent = i18n.t("peakshave_armed");
+            psEl.className = "text-[9px] font-bold uppercase tracking-wide text-cyan-300";
+            psEl.classList.remove("hidden");
+        } else {
+            psEl.classList.add("hidden");
+        }
     }
     el("hud-rep").textContent = `${Math.round(STATE.reputation)}%`;
     el("hud-demand").textContent = `${STATE.demandKw.toFixed(1)} kW`;
@@ -85,6 +117,33 @@ export function tickHud() {
             line.classList.add("hidden");
         }
     }
+
+    // Work orders: the deadline is the whole decision, so it stays on screen
+    // rather than living in a banner that scrolls away while the player is
+    // deciding when to open the window.
+    const mline = el("maintenance-line");
+    if (mline) {
+        const orders = STATE.maintenance.orders;
+        const active = orders.find((o) => o.state === "active");
+        const next = orders.find((o) => o.state === "pending");
+        if (active) {
+            mline.textContent = i18n.t("maint_active", { s: Math.ceil(active.leftSec) });
+        } else if (next) {
+            mline.textContent = i18n.t("maint_pending", {
+                name: i18n.t("b_" + nameOfOrder(next)),
+                dur: next.durationSec,
+                left: Math.max(0, Math.ceil(next.bySec - STATE.elapsedGameTime)),
+            });
+        }
+        mline.classList.toggle("hidden", !active && !next);
+    }
+}
+
+// The order's target type, for a human label. An order whose building has
+// been demolished names nothing rather than crashing the HUD.
+function nameOfOrder(order) {
+    const b = STATE.buildings.find((x) => x.id === order.buildingId);
+    return b ? b.type : "pdu";
 }
 
 // Human label for a contract from STATE.contract — shared by the HUD line
@@ -148,6 +207,16 @@ export function renderInspect(b) {
     if (b.config.chainRole === "load" && !b.powered) {
         rows.push(`<div class="text-red-400 font-bold mb-1">${i18n.t("insp_unpowered")}</div>`);
     }
+    const servicing = activeOrderFor(b);
+    const pending = pendingOrderFor(b);
+    if (servicing) {
+        rows.push(`<div class="text-sky-300 font-bold mb-1">${i18n.t("insp_in_service", { s: Math.ceil(servicing.leftSec) })}</div>`);
+    } else if (pending) {
+        rows.push(`<div class="text-sky-300 font-bold mb-1">${i18n.t("insp_service_due", {
+            dur: pending.durationSec,
+            left: Math.max(0, Math.ceil(pending.bySec - STATE.elapsedGameTime)),
+        })}</div>`);
+    }
     if (b.type === "rack") {
         rows.push(row(i18n.t("insp_load"), `${b.actualKw.toFixed(1)} / ${b.config.capacityKw} kW`));
         rows.push(row(i18n.t("insp_temp"), `${b.tempC.toFixed(1)}°C`));
@@ -179,6 +248,17 @@ export function renderInspect(b) {
         }
     } else if (b.type === "ups") {
         rows.push(row(i18n.t("insp_buffer"), `${b.bufferLeft.toFixed(1)}s / ${b.config.bufferSec}s`));
+        // upsMode (owned by sim/power.js) is a first-class fact, not a
+        // guess from bufferLeft's trend — "shaving" and "charging" look
+        // identical from a single number (both move), and only the mode
+        // says which direction is a choice and which is the bill.
+        if (b.upsMode === "shaving") {
+            rows.push(`<div class="text-emerald-300 font-bold mb-1">${i18n.t("insp_ups_shaving")}</div>`);
+        } else if (b.upsMode === "charging") {
+            rows.push(`<div class="text-cyan-300 font-bold mb-1">${i18n.t("insp_ups_charging")}</div>`);
+        } else if (b.upsMode === "bridging") {
+            rows.push(`<div class="text-amber-300 font-bold mb-1">${i18n.t("insp_ups_bridging")}</div>`);
+        }
     } else if (b.type === "generator") {
         rows.push(row(i18n.t("insp_fuel"), `${b.fuelLiters.toFixed(0)} / ${b.config.tankLiters} L`));
         rows.push(row(i18n.t("insp_draw"), `${b.actualKw.toFixed(1)} / ${b.config.capacityKw} kW`));

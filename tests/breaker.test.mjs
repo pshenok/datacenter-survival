@@ -227,6 +227,57 @@ describe("an open breaker is a dead root", () => {
         expect(STATE.servedKw).toBe(0);
     });
 
+    // The test above loads its PDU hard enough (48 kW of racks on a 16 kW
+    // bus) that the PDU trips on its own within a few ticks — which means it
+    // passes even if the UPS-clause ordering were wrong, because the PDU's
+    // own trip masks it. isDeadGear sits on OPPOSITE sides of the UPS clause
+    // in chainAlive (before it) and deliver() (after it), and neither site is
+    // proven by a mutation that stays isolated to the UPS itself. These two
+    // keep the bus safely inside its rating so nothing else can trip.
+    it("assignedKw goes to zero within a tick or two of a UPS trip — not only once its buffer runs dry", () => {
+        STATE.demandFixedKw = 10;
+        const feed = place("grid_feed", 2, 5);
+        const xf = place("transformer", 5, 5);
+        const ups = place("ups", 8, 5);
+        const pdu = place("pdu", 11, 5);
+        wireBuildings(feed, xf);
+        wireBuildings(xf, ups);
+        wireBuildings(ups, pdu);
+        const racks = [place("rack", 14, 4), place("rack", 14, 6)]; // 12 kW rated, well under the 16 kW pdu
+        racks.forEach((r) => wireBuildings(pdu, r));
+        for (let i = 0; i < 5 / DT; i++) step(); // steady state
+        expect(racks.some((r) => r.assignedKw > 0)).toBe(true);
+
+        ups.tripped = true;
+        expect(ups.bufferLeft).toBeGreaterThan(0); // the buffer has not even started draining
+        for (let i = 0; i < 2; i++) step();         // a tick or two, not the ~bufferSec a drain would take
+        expect(racks.every((r) => r.assignedKw === 0)).toBe(true);
+    });
+
+    it("a tripped UPS reads powered: false even while its own primary path stays live", () => {
+        STATE.demandFixedKw = 10;
+        const feed = place("grid_feed", 2, 5);
+        const xf = place("transformer", 5, 5);
+        const ups = place("ups", 8, 5);
+        const pdu = place("pdu", 11, 5);
+        wireBuildings(feed, xf);
+        wireBuildings(xf, ups);
+        wireBuildings(ups, pdu);
+        const racks = [place("rack", 14, 4), place("rack", 14, 6)];
+        racks.forEach((r) => wireBuildings(pdu, r));
+        for (let i = 0; i < 5 / DT; i++) step();
+        expect(ups.powered).toBe(true);
+
+        ups.tripped = true;
+        step();
+        // The primary chain above it (feed -> xf) is still fine. A deliver()
+        // that checked isDeadGear before the UPS clause would zero it there,
+        // then let the UPS clause see outLive === false and self-grant right
+        // back to live from its own full buffer — a tripped UPS powering
+        // itself off its own battery.
+        expect(ups.powered).toBe(false);
+    });
+
     it("an UPSTREAM trip starts the standby generator's cutover and it carries the bus", () => {
         // The generator exists to carry a dead primary path, and an open
         // breaker upstream IS a dead path. If primaryPathDead ignored trips,

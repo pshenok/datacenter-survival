@@ -32,7 +32,7 @@
 import { CONFIG } from "../core/config.js";
 import { STATE } from "../core/state.js";
 import { attributeLosses } from "./attribution.js";
-import { feedIsDark } from "./power.js";
+import { feedIsDark, isDeadGear } from "./power.js";
 
 // Seconds of game time per billing "hour" (see header).
 const BILLING_HOUR_SEC = 60;
@@ -92,6 +92,14 @@ export function upcomingWave(elapsed) {
 export function tariffBandAt(elapsed) {
     const cfg = CONFIG.tariff;
     const bands = cfg.bands;
+    // The Lab pins a band so a player can stand in one and watch the meter
+    // instead of waiting out a 120 s cycle to see the other half of it.
+    // STATE.lab.tariffBand is null everywhere else, and an unknown key falls
+    // through to the clock rather than inventing a band.
+    if (STATE.lab.tariffBand !== null) {
+        const pinned = bands.find((b) => b.key === STATE.lab.tariffBand);
+        if (pinned) return pinned;
+    }
     if (!Number.isFinite(elapsed) || !cfg.periodSec || bands.length === 0) {
         return bands[0] || { fromSec: 0, mult: 1, key: null };
     }
@@ -109,6 +117,9 @@ export function tariffBandAt(elapsed) {
 // rule as upcomingWave(), so the HUD treats both announcements alike.
 export function upcomingBand(elapsed) {
     const cfg = CONFIG.tariff;
+    // A pinned band never changes, so announcing a change is the same lie
+    // upcomingWave() refuses to tell while demand is pinned.
+    if (STATE.lab.tariffBand !== null) return null;
     if (!STATE.tariff.cycleOn || !Number.isFinite(elapsed) || !cfg.periodSec) return null;
     const t = ((elapsed % cfg.periodSec) + cfg.periodSec) % cfg.periodSec;
     let nextAt = cfg.periodSec;      // wrapping to band 0 is itself a boundary
@@ -136,6 +147,16 @@ export function chainAlive(building, byId) {
     let node = building;
     let hops = 0;
     while (node) {
+        // Dead gear (an open breaker OR an open service window) is a dead
+        // root — checked FIRST, before the "grid" branch below, or a SOURCE
+        // that is dead gear (a serviced grid_feed or generator) would return
+        // from inside that branch and never reach this check: only
+        // link/fanout nodes used to be able to trip, so this ordering was
+        // unreachable until out-for-service widened isDeadGear to cover
+        // sources too. Also checked BEFORE the UPS clause below, or a
+        // tripped UPS would still read as live and reintroduce the
+        // starvation bug pinned in tests/integration.test.mjs.
+        if (isDeadGear(node)) return false;
         if (node.parentId === "grid") {
             // During a grid outage EVERY grid feed is a dead root (the
             // window is the truth, not a per-building stamp) — assignment
@@ -145,10 +166,6 @@ export function chainAlive(building, byId) {
             if (node.type === "generator") return node.fuelLiters > 0;
             return !feedIsDark(node);
         }
-        // A tripped breaker is a dead root — checked BEFORE the UPS clause,
-        // or a tripped UPS would still read as live and reintroduce the
-        // starvation bug pinned in tests/integration.test.mjs.
-        if (node.tripped) return false;
         // A UPS with charge is a live root for assignment purposes: work must
         // keep flowing to its subtree during an upstream blip, or the buffer
         // in sim/power.js has nothing to carry and the blip becomes a blackout.
@@ -235,7 +252,14 @@ export function tickDemand(dt, elapsed) {
     STATE.tariff.band = STATE.tariff.cycleOn ? band.key : null;
     const tariffMul = (STATE.tariff.active ? STATE.tariff.multiplier : 1) * STATE.tariff.cycleMul;
     STATE.money += STATE.servedKw * CONFIG.buildings.rack.revenuePerKwhServed * billingHours;
-    STATE.money -= STATE.totalDrawKw * eco.powerCostPerKwh * tariffMul * billingHours;
+    // PEAK SHAVING (sim/power.js, STATE.peakShave): kW served from a UPS
+    // buffer this tick already left the grid — battery-sourced draw does
+    // not hit the meter, which is the entire point of the mechanic.
+    // totalDrawKw itself is untouched (still every watt the facility drew,
+    // whatever it came from — PUE's numerator stays honest); only the BILL
+    // subtracts it, here and nowhere else.
+    const billedDrawKw = Math.max(0, STATE.totalDrawKw - STATE.batteryKw);
+    STATE.money -= billedDrawKw * eco.powerCostPerKwh * tariffMul * billingHours;
     STATE.money -= missedKw * eco.slaPenaltyPerKwhMissed * billingHours;
 
     // Reputation drifts toward the SLA compliance ratio mapped to 0..100.
@@ -250,10 +274,20 @@ export function tickDemand(dt, elapsed) {
 
     // Game over. Bankruptcy is checked first — if both trip in the same
     // tick, the verdict is "bankrupt" (documented ordering).
-    if (STATE.money <= eco.bankruptcyAt) {
-        STATE.gameOver = "bankrupt";
-    } else if (STATE.reputation <= CONFIG.sla.gameOverAt + REPUTATION_GAMEOVER_EPSILON) {
-        STATE.gameOver = "reputation";
+    //
+    // A SANDBOX level (STATE.lab.on — The Lab, false everywhere else) has no
+    // loss condition at all, matching campaign/campaign.js's refusal to
+    // resolve it: leave the room dark for about seventy seconds and
+    // reputation reaches the floor, and a rehearsal room that ends in a
+    // frozen clock behind no modal at all is worse than one you cannot lose.
+    // The meter, the SLA penalty and the reputation drift all still run —
+    // they are what the knobs are there to show you.
+    if (!STATE.lab.on) {
+        if (STATE.money <= eco.bankruptcyAt) {
+            STATE.gameOver = "bankrupt";
+        } else if (STATE.reputation <= CONFIG.sla.gameOverAt + REPUTATION_GAMEOVER_EPSILON) {
+            STATE.gameOver = "reputation";
+        }
     }
 }
 
