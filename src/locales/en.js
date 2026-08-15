@@ -16,6 +16,16 @@ export const EN_TRANSLATIONS = {
     "play_pause_tip": "Play / Pause (Space)",
     "paused_pill": "PAUSED — build freely, then press ▶",
 
+    "seed_label": "Seed",
+    "seed_placeholder": "SEED (OPTIONAL)",
+    "seed_hint": "Same seed, same crises, at the same seconds.",
+    "seed_pill_tip": "Copy the link to this run — the same room, crisis for crisis",
+    "seed_roll_tip": "Roll a fresh seed",
+    "seed_copy_tip": "Copy the link",
+    "seed_copied": "Link copied — seed {seed}",
+    "seed_copy_failed": "Could not copy — here is the link: {url}",
+    "seed_share": "Send this link — the same room, seed {seed}",
+
     "tool_select": "Select",
     "tool_wire": "Wire",
     "tool_demolish": "Demolish",

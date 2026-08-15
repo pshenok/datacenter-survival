@@ -176,6 +176,40 @@ Never initialise a schedule with a concrete number in `state.js`. In any test
 that must not be perturbed, pin all of them in `beforeEach` — leave one
 unpinned and a long-running test goes flaky the moment its window opens.
 
+### What a seed guarantees, and what it does not
+
+A seed pins the run's **content**, exactly: which crisis fires, how far into
+game time (`STATE.elapsedGameTime`, not wall-clock), how long it lasts, which
+contract is offered, and what its target is. Every value `runRng.crisis` /
+`runRng.contracts` produce is identical, to twelve significant digits, between
+two loads of the same token — `tests/sim/seed-wiring.test.mjs` drives the
+shipped `game.js` loop (not a hand-copied one) to prove it.
+
+It does **not** pin the run's absolute wall-clock anchor. A schedule is
+`elapsed + span(rng)`, and `elapsed` at the first draw is whatever
+`STATE.elapsedGameTime` has accumulated to by then — which starts from the
+first real frame's `dt` in `animate()`'s `rawDt = Math.min(0.1, (time -
+lastTime) / 1000 || 0)`. Two players on the same seed do not press Play at
+the same point in a frame, and then integrate at whatever refresh rate their
+machine gives them, so the run's clock is anchored a frame-timing's worth
+apart between them; the *durations* drawn from the seed ride unchanged on
+top of wherever that anchor lands. Measured directly, at 30/60/144 Hz, the
+first brownout in a fixed `KYIV` run fires at `elapsed` 159.867 s / 159.850 s
+/ 159.826 s — a **41 ms** spread across ordinary refresh rates, growing to
+**83 ms** when the very first unpaused frame is itself slow enough to hit the
+`Math.min(0.1, …)` clamp (a stalled or backgrounded tab, not merely a
+different monitor). Two to three orders of magnitude past an early estimate
+of "about 0.1 ms" — this is frame-timing jitter, not a sub-millisecond
+scheduler tick, and the corrected figures belong here rather than only in a
+build report nobody after this PR will read.
+
+Collapsing the anchor — e.g. dating every first draw from `elapsed = 0`
+regardless of when Play was pressed — would change the sim's scheduling
+semantics for every run, seeded or not, which is exactly the kind of change
+the campaign proofs exist to catch. Left alone on purpose: the player-facing
+promise is same seed, same crisis, same contract, same target, and that
+holds regardless of frame rate.
+
 ## The UI boundary
 
 `src/core/state.js` puts it plainly: sim modules mutate exactly the fields
