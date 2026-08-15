@@ -91,13 +91,8 @@ if (!Number.isFinite(dt) || dt <= 0) return;
 schedules and charges the power bill while the player is paused. A single NaN
 propagates power → heat → money until the whole HUD reads NaN with no clue
 where it started. `tests/power.test.mjs` pins `0`, NaN, negative, `-0` and
-`Infinity` explicitly.
-
-*Known divergence:* `src/sim/heat.js` guards with `if (dt === 0) return;`
-instead. `tickHeat(NaN)` poisons the entire heat field and `tickHeat(-1)` runs
-the physics backwards; only `game.js`'s `Math.min(0.1, …)` clamp protects it
-today. Aligning it is a good first issue — do not copy the pattern into new
-code.
+`Infinity` explicitly; `tests/heat.test.mjs` pins the same set across
+`tickHeat` and each of its five exported stages.
 
 **A decided run.** There are two flags and they are guarded differently.
 

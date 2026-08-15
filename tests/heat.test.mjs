@@ -284,6 +284,23 @@ describe("invariants", () => {
         expect(crac.duty).toBe(0.77);
     });
 
+    it("tickHeat(NaN), tickHeat(-1), tickHeat(-0) and tickHeat(Infinity) are all full no-ops", () => {
+        const rack = addRack(8, 8, 6);
+        const crac = addCrac(12, 8, true);
+        setCell(8, 8, 55);
+        rack.tempC = 51;
+        rack.throttleFactor = 0.3;
+        crac.duty = 0.77;
+        const snapshot = Array.from(STATE.heatField);
+        for (const bad of [NaN, -1, -0, Infinity]) {
+            tickHeat(bad);
+            expect(Array.from(STATE.heatField)).toEqual(snapshot);
+            expect(rack.tempC).toBe(51);
+            expect(rack.throttleFactor).toBe(0.3);
+            expect(crac.duty).toBe(0.77);
+        }
+    });
+
     it("conservation: field delta per stage matches added - dissipated - removed", () => {
         const rack = addRack(8, 8, 6);
         const crac = addCrac(12, 8, true);
@@ -373,6 +390,33 @@ describe("adversarial", () => {
         applyCracCooling(0); // must NOT rewrite duty either
         updateBuildingThermals(0); // must NOT rewrite tempC/throttleFactor
         expect(Array.from(STATE.heatField)).toEqual(snapshot);
+        expect(crac.duty).toBe(0.77);
+        expect(rack.tempC).toBe(51);
+        expect(rack.throttleFactor).toBe(0.3);
+    });
+
+    it("per-stage guards hold against NaN, negative, -0 and Infinity on dirty state", () => {
+        const rack = addRack(8, 8, 6);
+        const crac = addCrac(12, 8, true);
+        setCell(8, 8, 55);
+        setCell(12, 8, 60);
+        rack.tempC = 51;
+        rack.throttleFactor = 0.3;
+        crac.duty = 0.77;
+        const snapshot = Array.from(STATE.heatField);
+        const buildingSnapshot = () => STATE.buildings.map((b) => ({
+            tempC: b.tempC, duty: b.duty, throttleFactor: b.throttleFactor,
+        }));
+        const before = buildingSnapshot();
+        for (const bad of [NaN, -1, -0, Infinity]) {
+            injectRackHeat(bad);
+            diffuseField(bad);
+            dissipateField(bad);
+            applyCracCooling(bad); // must NOT rewrite duty either
+            updateBuildingThermals(bad); // must NOT rewrite tempC/throttleFactor
+            expect(Array.from(STATE.heatField)).toEqual(snapshot);
+            expect(buildingSnapshot()).toEqual(before);
+        }
         expect(crac.duty).toBe(0.77);
         expect(rack.tempC).toBe(51);
         expect(rack.throttleFactor).toBe(0.3);
