@@ -284,9 +284,28 @@ function seedFromUrl() {
         return null;
     }
 }
-function readSeedInput() {
+// Normalizes the seed box IN PLACE and returns the token. This is the fix
+// for a token that silently normalizes to something other than what was
+// typed — worst case, to nothing at all. `normalizeSeed` strips anything
+// outside `[0-9A-Z]`, so a Cyrillic word like "КИЇВ" (the single most
+// natural thing to type in a game that ships Ukrainian as a first-class
+// locale) collapses to "" and the run starts unseeded with the box still
+// showing "КИЇВ" — indistinguishable from having left it blank, and silent
+// about it. Echoing the normalized token back means the box always shows
+// the room that is actually about to run: it goes visibly empty instead of
+// keeping dead text, or shows "42" in place of "КИЇВ-42" so the mismatch is
+// caught before Power On rather than discovered on the pill afterwards.
+// Deliberately NOT a transliteration scheme — that reshapes what tokens
+// mean and is a bigger call than this fix.
+function echoSeedInput() {
     const input = document.getElementById("seed-input");
-    return input ? normalizeSeed(input.value) : null;
+    if (!input) return null;
+    const token = normalizeSeed(input.value);
+    input.value = token || "";
+    return token;
+}
+function readSeedInput() {
+    return echoSeedInput();
 }
 // `seed === undefined` means "whatever the menu box says" (the Power On
 // button); an explicit value — including null — overrides it, which is what
@@ -323,16 +342,29 @@ window.rollSeed = () => {
     if (!input) return;
     input.value = randomSeedToken(Math.random);
 };
+// Wired to the box's blur, so leaving the field (including by clicking
+// Power On) shows the correction BEFORE the run starts, not only after.
+window.echoSeedInput = echoSeedInput;
 // The seed is copyable wherever it is visible — the HUD pill mid-run and the
 // game-over line — because a run you cannot hand to someone else is exactly
-// the unfalsifiable claim this feature exists to replace.
-window.copySeedLink = () => {
+// the unfalsifiable claim this feature exists to replace. Which is exactly
+// why the "copied" banner must not lie: `navigator.clipboard` is undefined
+// on a non-secure origin (a LAN IP — precisely how you test on a phone), and
+// a denied permission rejects the promise. AWAIT it, and claim success only
+// on success. On failure, surface the URL itself in the banner — mid-run the
+// pill is the only copy affordance (the game-over screen has a selectable
+// field as a fallback; the pill has none but the address bar), so the banner
+// has to carry the link this time.
+window.copySeedLink = async () => {
     const url = shareUrl(STATE.seed);
     if (!url) return;
     try {
-        if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
-    } catch { /* no clipboard permission — the game-over field is selectable */ }
-    showBanner(i18n.t("seed_copied", { seed: STATE.seed }), 2500);
+        if (!navigator.clipboard) throw new Error("no clipboard API");
+        await navigator.clipboard.writeText(url);
+        showBanner(i18n.t("seed_copied", { seed: STATE.seed }), 2500);
+    } catch {
+        showBanner(i18n.t("seed_copy_failed", { url }), 6000);
+    }
 };
 // Campaign entries. Selecting a level opens its BRIEFING (the SS pattern —
 // a level never starts cold); the briefing's Start button launches it,

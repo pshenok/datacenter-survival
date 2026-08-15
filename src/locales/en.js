@@ -23,6 +23,7 @@ export const EN_TRANSLATIONS = {
     "seed_roll_tip": "Roll a fresh seed",
     "seed_copy_tip": "Copy the link",
     "seed_copied": "Link copied — seed {seed}",
+    "seed_copy_failed": "Could not copy — here is the link: {url}",
     "seed_share": "Send this link — the same room, seed {seed}",
 
     "tool_select": "Select",

@@ -180,7 +180,7 @@
       <div class="flex items-center gap-2 mb-1">
         <input id="seed-input" type="text" maxlength="12" autocomplete="off" spellcheck="false"
                class="flex-1 min-w-0 bg-gray-900/70 border border-gray-700 rounded-lg px-3 py-2 text-xs text-cyan-200 uppercase tracking-widest text-center placeholder-gray-600 focus:outline-none focus:border-cyan-500"
-               placeholder="SEED (OPTIONAL)" data-i18n="seed_placeholder" />
+               placeholder="SEED (OPTIONAL)" data-i18n="seed_placeholder" onblur="echoSeedInput()" />
         <button onclick="rollSeed()" class="glass-panel rounded-lg px-3 py-2 text-gray-300 hover:text-white shrink-0" title="Roll a fresh seed" data-i18n-title="seed_roll_tip">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.1" fill="currentColor" stroke="none"/></svg>
         </button>

@@ -10,6 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { CONFIG } from "../../src/core/config.js";
 import { seededRngs } from "../../src/core/rng.js";
+import { shareUrl } from "../../src/ui/hud.js";
 
 const pending = [];
 globalThis.requestAnimationFrame = (cb) => pending.push(cb);
@@ -69,6 +70,36 @@ describe("the seed reaches the game", () => {
         seedInput().value = "";
         window.startGame();
         expect(STATE.seed).toBeNull();
+    });
+
+    // A Cyrillic word is the single most natural thing to type here — this
+    // game ships Ukrainian as a first-class locale, and the seed box is
+    // labelled СІД (ЗА БАЖАННЯМ). normalizeSeed strips anything outside
+    // [0-9A-Z], so "КИЇВ" collapses to nothing and the run starts UNSEEDED:
+    // no ?seed=, no pill — indistinguishable from having left the box blank,
+    // UNLESS the box itself shows what happened. Without the echo the input
+    // still reads "КИЇВ" after Power On, next to a run that quietly is not
+    // the one it names.
+    it("echoes the box empty when a seed normalizes to NOTHING — a Cyrillic word, e.g.", () => {
+        seedInput().value = "КИЇВ";
+        window.startGame();
+        expect(STATE.seed).toBeNull();
+        expect(seedInput().value).toBe("");
+    });
+
+    // The other half of the same bug: a token that survives normalization
+    // but not AS what was typed. "КИЇВ-42" is a real, seeded room — just not
+    // the one the player named — and the box has to say so before Power On,
+    // not leave the player to notice from the pill afterwards.
+    it("echoes a token that normalized to something OTHER than what was typed", () => {
+        seedInput().value = "КИЇВ-42";
+        window.startGame();
+        expect(STATE.seed).toBe("42");
+        expect(seedInput().value).toBe("42");
+    });
+
+    it("the box's blur is wired to the same echo, so leaving the field shows the correction before Power On is even pressed", () => {
+        expect(seedInput().getAttribute("onblur")).toBe("echoSeedInput()");
     });
 
     it("puts the run on the address bar, so the address bar IS the share link", () => {
@@ -231,5 +262,44 @@ describe("a seeded run starts the same room for everyone", () => {
         localStorage.clear();
         window.startGame("KYIV");
         expect(localStorage.getItem("dc_tutorial_done")).toBeNull();
+    });
+});
+
+// copySeedLink must not CLAIM a copy that did not happen. navigator.clipboard
+// is undefined on a non-secure origin (a LAN IP — exactly how you test on a
+// phone), and a denied permission rejects the promise; both used to be
+// swallowed while the "Link copied" banner fired unconditionally anyway.
+describe("copying the seed link tells the truth", () => {
+    const banner = () => document.getElementById("event-banner");
+    // happy-dom's navigator.clipboard is a getter on the prototype; defining
+    // an own property shadows it for one test, and `delete` uncovers the
+    // prototype's getter again for the next.
+    afterEach(() => {
+        delete navigator.clipboard;
+    });
+
+    it("claims success only once the clipboard write actually resolves", async () => {
+        play("KYIV", 2);
+        await window.copySeedLink();
+        expect(banner().textContent).toBe("Link copied — seed KYIV");
+    });
+
+    it("does NOT claim a copy that did not happen — clipboard absent, e.g. a non-secure origin", async () => {
+        play("KYIV", 2);
+        Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+        await window.copySeedLink();
+        expect(banner().textContent).not.toMatch(/Link copied/);
+        expect(banner().textContent).toContain(shareUrl("KYIV"));
+    });
+
+    it("does NOT claim a copy that did not happen — permission denied", async () => {
+        play("KYIV", 2);
+        Object.defineProperty(navigator, "clipboard", {
+            value: { writeText: () => Promise.reject(new Error("denied")) },
+            configurable: true,
+        });
+        await window.copySeedLink();
+        expect(banner().textContent).not.toMatch(/Link copied/);
+        expect(banner().textContent).toContain(shareUrl("KYIV"));
     });
 });

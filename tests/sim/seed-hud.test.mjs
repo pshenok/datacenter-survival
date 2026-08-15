@@ -110,7 +110,7 @@ describe("entering a seed", () => {
 });
 
 describe("both locales", () => {
-    const KEYS = ["seed_label", "seed_placeholder", "seed_hint", "seed_pill_tip", "seed_roll_tip", "seed_copy_tip", "seed_copied", "seed_share"];
+    const KEYS = ["seed_label", "seed_placeholder", "seed_hint", "seed_pill_tip", "seed_roll_tip", "seed_copy_tip", "seed_copied", "seed_copy_failed", "seed_share"];
 
     it("carry every seed string — the parity test cannot catch a key missing from BOTH", () => {
         for (const k of KEYS) {
@@ -124,6 +124,11 @@ describe("both locales", () => {
             expect(EN_TRANSLATIONS[k]).toContain("{seed}");
             expect(UK_TRANSLATIONS[k]).toContain("{seed}");
         }
+    });
+
+    it("keep the {url} placeholder in the copy-failed fallback in both — the URL IS the message", () => {
+        expect(EN_TRANSLATIONS.seed_copy_failed).toContain("{url}");
+        expect(UK_TRANSLATIONS.seed_copy_failed).toContain("{url}");
     });
 
     it("render the share label in Ukrainian too", () => {

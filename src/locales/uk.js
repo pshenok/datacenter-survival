@@ -23,6 +23,7 @@ export const UK_TRANSLATIONS = {
     "seed_roll_tip": "Згенерувати новий сід",
     "seed_copy_tip": "Скопіювати посилання",
     "seed_copied": "Посилання скопійовано — сід {seed}",
+    "seed_copy_failed": "Не вдалося скопіювати — ось посилання: {url}",
     "seed_share": "Надішли це посилання — та сама зала, сід {seed}",
 
     "tool_select": "Вибір",

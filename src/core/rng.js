@@ -14,6 +14,12 @@
 // missing was something to inject. mulberry32 is ~6 lines, has a full 2^32
 // period, passes gjrand's basic suite, and adds no dependency to a repo that
 // deliberately has no build step.
+//
+// WHAT A SEED DOES NOT PIN: the run's absolute wall-clock anchor. The
+// content a seed draws (which crisis, how long, which contract, what target)
+// is exact; WHEN it lands in elapsed game time depends on the first real
+// frame's dt in game.js, so it drifts tens of milliseconds between loads —
+// see "What a seed guarantees, and what it does not" in ARCHITECTURE.md.
 
 // Crockford base32 minus the confusables: no I, L, O (misread as 1, 1, 0)
 // and no U (so a generated seed cannot spell something unfortunate). A seed
