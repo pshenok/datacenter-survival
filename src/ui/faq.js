@@ -4,7 +4,7 @@
 import { CONFIG } from "../core/config.js";
 import { i18n } from "../i18n.js";
 
-const TABS = ["basics", "buildings", "power", "heat", "cooling", "tariff", "shaving", "events", "losses", "controls"];
+const TABS = ["basics", "buildings", "power", "heat", "cooling", "water", "tariff", "shaving", "events", "losses", "controls"];
 let activeTab = "basics";
 
 function buildingRows() {
@@ -61,6 +61,45 @@ function shavingRows() {
     ).join("");
 }
 
+// The water table, and the reason this tab exists at all. Every row is
+// derived from the CONFIG the meter bills from — the buildings table's rule —
+// but the last three are the point: they are the ARITHMETIC OF THE DECISION,
+// worked at full output for both options, so what the player is told can
+// never drift from what the simulation charges.
+//
+// The comparison is like for like: the same coolUnits of cooling, done once
+// by a plant feeding the CRAHs that spend it, and again by the CRACs it would
+// take to do it alone. A real room runs at part load, where the plant's fixed
+// draw is spread over less cooling and break-even sits a little higher — the
+// drought multiplier is sized to clear both figures.
+function waterRows() {
+    const plant = CONFIG.buildings.chiller;
+    const crac = CONFIG.buildings.crac;
+    const crah = CONFIG.buildings.crah;
+    const eco = CONFIG.economy;
+    const units = plant.coolUnits;
+    const cracKw = (units / crac.coolPerSec) * crac.drawKw;
+    const loopKw = plant.drawKw + (units / crah.coolPerSec) * crah.drawKw;
+    const savedPerHour = (cracKw - loopKw) * eco.powerCostPerKwh;
+    const litersPerHour = units * plant.litersPerCoolUnit;
+    const droughtMul = CONFIG.events.drought.multiplier;
+    const rows = [
+        [i18n.t("faq_water_row_wue"), `${plant.litersPerCoolUnit} L/kWh`],
+        [i18n.t("faq_water_row_full"), `${litersPerHour.toFixed(0)} L/hr`],
+        [i18n.t("faq_water_row_price"), `$${eco.waterCostPerLiter}/L`],
+        [i18n.t("faq_water_row_bill"), `$${(litersPerHour * eco.waterCostPerLiter).toFixed(2)}/hr`],
+        [i18n.t("faq_water_row_saved"), `$${savedPerHour.toFixed(2)}/hr`],
+        [i18n.t("faq_water_row_breakeven"), `$${(savedPerHour / litersPerHour).toFixed(3)}/L`],
+        [i18n.t("faq_water_row_drought"), `×${droughtMul} = $${(eco.waterCostPerLiter * droughtMul).toFixed(3)}/L`],
+    ];
+    return rows.map(([label, value]) =>
+        `<div class="flex justify-between py-1 border-b border-gray-800">
+            <span class="text-white font-bold">${label}</span>
+            <span class="text-gray-400">${value}</span>
+        </div>`
+    ).join("");
+}
+
 function tabContent() {
     switch (activeTab) {
         case "basics": return `
@@ -80,6 +119,15 @@ function tabContent() {
         case "cooling": return `
             <p>${i18n.t("faq_cool_1")}</p>
             <p class="text-cyan-300">${i18n.t("faq_cool_2")}</p>`;
+        // Generated from CONFIG, like the buildings table and the tariff
+        // bands: a page that tells the player when the loop stops paying must
+        // not be able to drift from the meter that charges them for it.
+        case "water": return `
+            <p>${i18n.t("faq_water_1")}</p>
+            <p>${i18n.t("faq_water_2")}</p>
+            <div class="text-xs my-2">${waterRows()}</div>
+            <p>${i18n.t("faq_water_3")}</p>
+            <p class="text-cyan-300">${i18n.t("faq_water_4")}</p>`;
         // Generated from CONFIG, like the buildings table: a schedule the
         // player is told to plan against must not be able to drift from the
         // one the meter actually charges.
@@ -103,7 +151,8 @@ function tabContent() {
             <p>${i18n.t("faq_events_5")}</p>
             <p>${i18n.t("faq_events_6")}</p>
             <p>${i18n.t("faq_events_7")}</p>
-            <p>${i18n.t("faq_events_8")}</p>`;
+            <p>${i18n.t("faq_events_8")}</p>
+            <p>${i18n.t("faq_events_9", { mult: CONFIG.events.drought.multiplier })}</p>`;
         case "losses": return `
             <p>${i18n.t("faq_loss_1")}</p>
             <p>${i18n.t("faq_loss_2")}</p>

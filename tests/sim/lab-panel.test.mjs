@@ -83,7 +83,7 @@ describe("the panel is inert outside The Lab", () => {
 });
 
 describe("the panel in The Lab", () => {
-    it("renders every control: two knobs, four meter positions, five fire buttons, a reset", () => {
+    it("renders every control: two knobs, four meter positions, six fire buttons, a reset", () => {
         runningLab();
         expect(hidden()).toBe(false);
         expect(panel().textContent).toContain("THE LAB");
@@ -94,7 +94,7 @@ describe("the panel in The Lab", () => {
         // campaign/lab.js fires from — a sixth event cannot ship buttonless.
         expect([...panel().querySelectorAll("[data-lab-fire]")].map((b) => b.dataset.labFire))
             .toEqual(LAB_EVENTS);
-        expect(LAB_EVENTS).toEqual(["heatwave", "brownout", "outage", "tariff", "crac_fail"]);
+        expect(LAB_EVENTS).toEqual(["heatwave", "brownout", "outage", "tariff", "drought", "crac_fail"]);
         expect(btn("#lab-reset")).not.toBeNull();
     });
 
@@ -239,6 +239,6 @@ describe("every control goes through game.js, never through the panel", () => {
             gridOutage: STATE.gridOutage,
             money: STATE.money,
         })).toBe(before);
-        expect(calls.length).toBe(14);   // 4 steppers + 4 meter + 5 fire + 1 reset
+        expect(calls.length).toBe(15);   // 4 steppers + 4 meter + 6 fire + 1 reset
     });
 });

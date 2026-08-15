@@ -23,6 +23,7 @@ const ICONS = {
     brownout: '<path stroke-linecap="round" stroke-linejoin="round" d="M13 3 6 13h4l-1 8 7-10h-4z"/><path stroke-linecap="round" d="M3 20h4M17 20h4"/>',
     outage: '<path stroke-linecap="round" stroke-linejoin="round" d="M13 3 8 10h3l-1 5"/><path stroke-linecap="round" d="M4 4l16 16"/>',
     tariff: '<path stroke-linecap="round" d="M12 4v16M15.5 8a3.5 3 0 0 0-3.5-2c-2 0-3.5 1-3.5 2.5S10 11 12 11.5s3.5 1 3.5 2.5-1.5 2.5-3.5 2.5a3.5 3 0 0 1-3.5-2"/>',
+    drought: '<path stroke-linecap="round" stroke-linejoin="round" d="M12 3S7 9.5 7 13a5 5 0 0 0 10 0c0-3.5-5-10-5-10z"/><path stroke-linecap="round" d="M3 21h4m3 0h2m3 0h4"/>',
     crac_fail: '<rect x="3" y="7" width="14" height="11" rx="1"/><circle cx="10" cy="12.5" r="2.4"/><path stroke-linecap="round" d="M18 6l4 4m0-4-4 4"/>',
 };
 
@@ -31,6 +32,7 @@ const FIRE_LABELS = {
     brownout: "lab_fire_brownout",
     outage: "lab_fire_outage",
     tariff: "lab_fire_tariff",
+    drought: "lab_fire_drought",
     crac_fail: "lab_fire_crac",
 };
 

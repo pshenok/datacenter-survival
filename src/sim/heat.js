@@ -1,7 +1,8 @@
 // Heat field + thermal response (design doc: "Simulation model" / heat field).
 //
-// OWNS (writes): STATE.heatField, and on Building instances: tempC (all
-// buildings), throttleFactor (racks), duty (CRACs).
+// OWNS (writes): STATE.heatField, STATE.coolingLoop, STATE.water.litersPerHour,
+// and on Building instances: tempC (all buildings), throttleFactor (racks),
+// duty (CRACs, CRAHs and chiller plants), waterLitersPerHour (plants).
 // READS ONLY: STATE.buildings, STATE.heatwave.active, CONFIG.heat,
 // CONFIG.buildings, CONFIG.gridSize, and crac.broken (owned by
 // sim/crisis.js) — a broken CRAC's duty is forced to 0, so it neither
@@ -137,15 +138,32 @@ function updateCoolingLoop() {
     STATE.coolingLoop.ratio = ratio;
 
     const used = Math.min(demand, capacity);
+    // WATER. An evaporative tower rejects heat by boiling water off, so the
+    // litres follow the cooling actually DELIVERED — coolUnits x duty — and
+    // never the nameplate: a plant nobody drinks from sits at duty 0 and
+    // evaporates nothing while still paying idleDrawKw. The rate is read off
+    // b.config, so a future dry-cooled plant declares no litersPerCoolUnit
+    // and drinks nothing; a CRAC has never had the field, which is the entire
+    // trade the chapter is about.
+    //
+    // Loop MEMBERSHIP is still by literal type here, exactly as the supply
+    // and demand branches above are (see CONTRIBUTING) — a second plant type
+    // added without a branch would drink nothing and the suite would stay
+    // green, because nothing iterates CONFIG looking for the field.
+    let litersPerHour = 0;
     for (const b of STATE.buildings) {
         if (b.type !== "chiller") continue;
         // A plant that nobody drinks from still pays its idle draw — that is
         // exactly why one chiller behind one CRAH is worse than one CRAC.
         // A plant that is DOWN reads as stopped, whatever its healthy twin is
-        // doing: duty drives both the bill and the spinning tower, so leaving
-        // it at the loop's utilisation would render a dead plant as busy.
+        // doing: duty drives the bill, the spinning tower AND the water, so
+        // leaving it at the loop's utilisation would render a dead plant as
+        // busy and keep charging for water it never evaporated.
         b.duty = isRunning(b) && capacity > 0 ? Math.min(1, used / capacity) : 0;
+        b.waterLitersPerHour = (b.config.litersPerCoolUnit || 0) * (b.config.coolUnits || 0) * b.duty;
+        litersPerHour += b.waterLitersPerHour;
     }
+    STATE.water.litersPerHour = litersPerHour;
 }
 
 export function applyCracCooling(dt) {

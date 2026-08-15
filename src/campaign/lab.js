@@ -56,7 +56,7 @@ export const LAB_LIMITS = {
 // rehearsal rather than another draw.
 const mid = (cfg) => (cfg.minDurationSec + cfg.maxDurationSec) / 2;
 
-export const LAB_EVENTS = ["heatwave", "brownout", "outage", "tariff", "crac_fail"];
+export const LAB_EVENTS = ["heatwave", "brownout", "outage", "tariff", "drought", "crac_fail"];
 
 function eventSpec(kind) {
     const ev = CONFIG.events;
@@ -71,6 +71,8 @@ function eventSpec(kind) {
             return { kind, durationSec: mid(ev.gridOutage), scope: "all" };
         case "tariff":
             return { kind, durationSec: mid(ev.tariff), multiplier: ev.tariff.multiplier };
+        case "drought":
+            return { kind, durationSec: mid(ev.drought), multiplier: ev.drought.multiplier };
         default:
             return null;
     }
@@ -195,5 +197,9 @@ export function resetLab() {
     // window otherwise and quietly triples the bill forever.
     STATE.tariff.active = false;
     STATE.tariff.multiplier = 1;
+    // Same pair again for the water utility's window — a drought left latched
+    // keeps charging x12 for water long after the knobs were reset.
+    STATE.drought.active = false;
+    STATE.drought.multiplier = 1;
     return true;
 }

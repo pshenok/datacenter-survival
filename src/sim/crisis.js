@@ -10,6 +10,9 @@
 //                grid_feed's EFFECTIVE capacity is capacityKw * factor —
 //                consumed by sim/power.js; CONFIG.buildings is never mutated.
 //   breakdown  — { nextAt } schedule for the next CRAC failure.
+//   drought    — { active, endsAt, nextAt, multiplier }. While active, the
+//                WATER bill in sim/demand.js is multiplied; nothing else in
+//                the simulation reads it.
 //   money      — debited by repairCrac() (the paid repair fee only; the free
 //                self-repair charges nothing).
 // Building fields owned (declared in entities/Building.js):
@@ -133,6 +136,30 @@ function tickTariff(elapsed, rng) {
     }
 }
 
+// Drought window. Same scheduling pattern as the peak tariff above, and the
+// same narrowness: the ONLY reader is the water line in sim/demand.js, so
+// this event is provably economic-only — no capacity, no heat, no SLA, and
+// not the power meter either. A facility with no evaporative plant in it
+// cannot tell a drought is happening, which is exactly right: the CRAC
+// beside it rejects its heat to air and owes the reservoir nothing.
+function tickDrought(elapsed, rng) {
+    const dr = STATE.drought;
+    const cfg = CONFIG.events.drought;
+    if (dr.nextAt === null) {
+        dr.nextAt = elapsed + span(cfg.minIntervalSec, cfg.maxIntervalSec, rng);
+    }
+    if (!dr.active && elapsed >= dr.nextAt) {
+        dr.endsAt = dr.nextAt + span(cfg.minDurationSec, cfg.maxDurationSec, rng);
+        dr.nextAt += span(cfg.minIntervalSec, cfg.maxIntervalSec, rng);
+        dr.multiplier = cfg.multiplier;
+        dr.active = true;
+    }
+    if (dr.active && elapsed >= dr.endsAt) {
+        dr.active = false;
+        dr.multiplier = 1;
+    }
+}
+
 // Fuel logistics: a paid refill lands fuelDeliverySec after the order.
 function tickFuelDeliveries(elapsed) {
     for (const b of STATE.buildings) {
@@ -156,6 +183,7 @@ export function tickCrisis(dt, elapsed, rng = Math.random) {
     tickBreakdown(elapsed, rng);
     tickGridOutage(elapsed, rng);
     tickTariff(elapsed, rng);
+    tickDrought(elapsed, rng);
     tickFuelDeliveries(elapsed);
 }
 

@@ -39,6 +39,7 @@ let seenContractDone = null;
 let gameOverShown = false;
 let outageWasActive = false;
 let tariffWasActive = false;
+let droughtWasActive = false;
 let missedOrders = new Set();
 
 function tick(dt) {
@@ -154,6 +155,22 @@ function tick(dt) {
     if (!STATE.tariff.active && tariffWasActive) showBanner(i18n.t("tariff_end"), 2500);
     tariffWasActive = STATE.tariff.active;
 
+    // Drought: the OTHER meter. Announced only to a facility that actually
+    // evaporates water, which is why the edge is "the window is open AND we
+    // drink" rather than the window alone — an air-cooled hall owes the
+    // reservoir nothing and a banner about it there is pure noise. Build a
+    // chiller mid-drought and the announcement arrives then, which is exactly
+    // when it starts being true of you.
+    const drinking = STATE.water.litersPerHour > 0;
+    if (STATE.drought.active && drinking && !droughtWasActive) {
+        droughtWasActive = true;
+        showBanner(i18n.t("drought_start", { mult: STATE.drought.multiplier }), 6000);
+    }
+    if (!STATE.drought.active && droughtWasActive) {
+        droughtWasActive = false;
+        showBanner(i18n.t("drought_end"), 2500);
+    }
+
     if (STATE.gameOver && !gameOverShown) {
         gameOverShown = true;
         STATE.timeScale = 0;
@@ -207,6 +224,7 @@ function clearWorld() {
     gameOverShown = false;
     outageWasActive = false;
     tariffWasActive = false;
+    droughtWasActive = false;
     missedOrders = new Set();
 }
 

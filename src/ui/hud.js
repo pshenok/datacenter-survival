@@ -101,6 +101,58 @@ export function tickHud() {
         el("hud-pue").textContent = "—";
     }
 
+    // WUE — litres of water per kWh of IT energy, the industry's own
+    // definition and the number that gets a datacenter into the local
+    // newspaper. Deliberately NOT colour-coded against a threshold the way
+    // PUE is: 1.8 L/kWh is what a healthy evaporative plant reads, so an
+    // amber "warning" there would be teaching that normal is bad. The alarm
+    // belongs on the drought pill below, where a price actually changed.
+    //
+    // The whole readout is invisible in a room that does not evaporate
+    // anything: no plant, no litres, no number — an air-cooled hall owes the
+    // reservoir nothing and should not be shown a water score of zero as if
+    // it were an achievement.
+    const w = STATE.water;
+    const wueEl = el("hud-wue");
+    if (wueEl) {
+        const live = STATE.itDrawKw > 0.05 && w.litersPerHour > 0
+            ? w.litersPerHour / STATE.itDrawKw
+            : null;
+        wueEl.textContent = live !== null ? live.toFixed(2) : "—";
+    }
+    // The run total. WUE is a cumulative number everywhere it is really
+    // quoted — an annual figure in every disclosure that publishes one — so
+    // the litres and the run-average sit under the live reading rather than
+    // replacing it.
+    const runEl = el("hud-wue-run");
+    if (runEl) {
+        const show = w.totalLiters > 0.05;
+        if (show) {
+            runEl.textContent = i18n.t("wue_run", {
+                liters: Math.round(w.totalLiters),
+                wue: (w.itKwh > 0 ? w.totalLiters / w.itKwh : 0).toFixed(2),
+            });
+        }
+        runEl.classList.toggle("hidden", !show);
+    }
+    // Drought pill, on the water number for the same reason the tariff pill
+    // sits on the money: it changes exactly one price and belongs beside it.
+    // Shown only to a facility that actually drinks — announcing a water
+    // crisis to an air-cooled hall is the kind of noise that trains a player
+    // to stop reading the HUD.
+    const drEl = el("hud-drought");
+    if (drEl) {
+        const show = STATE.drought.active && (w.litersPerHour > 0 || w.totalLiters > 0);
+        if (show) {
+            drEl.textContent = i18n.t("drought_pill", { mult: round2(STATE.drought.multiplier) });
+            // Assigning className drops the markup's classes, so the nowrap
+            // has to be restated here — without it the pill wraps inside the
+            // narrow HUD cell and collides with the paused pill below it.
+            drEl.className = "text-[9px] font-bold uppercase tracking-wide whitespace-nowrap text-amber-300";
+        }
+        drEl.classList.toggle("hidden", !show);
+    }
+
     // Active-contract line under the event banner.
     const c = STATE.contract;
     const line = el("contract-line");
@@ -233,6 +285,11 @@ export function renderInspect(b) {
         rows.push(row(i18n.t("insp_duty"), `${Math.round(b.duty * 100)}%`));
     } else if (b.type === "chiller") {
         rows.push(row(i18n.t("insp_draw"), `${b.actualKw.toFixed(1)} kW`));
+        // The BILLED litres, written by sim/heat.js — the same rule the draw
+        // row follows. A tower that is not rejecting heat is not evaporating,
+        // and this row is where a player finds out that an idling plant costs
+        // power but no water.
+        rows.push(row(i18n.t("insp_water"), `${b.waterLitersPerHour.toFixed(1)} L/hr`));
         rows.push(row(i18n.t("insp_loop"),
             `${Math.round(STATE.coolingLoop.demandUnits)} / ${Math.round(STATE.coolingLoop.capacityUnits)}`));
         if (STATE.coolingLoop.ratio < 0.999) {
