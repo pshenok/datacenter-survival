@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Dev tooling for Datacenter Survival. The game has NO build step — served raw by GitHub Pages. Tooling is optional, for contributors.",
+  "license": "MIT",
   "scripts": {
     "lint": "eslint .",
     "test": "vitest run",
