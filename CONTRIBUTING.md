@@ -48,7 +48,7 @@ PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i
 npm run check     # eslint . && vitest run — exactly what CI runs
 ```
 
-Baseline today: lint clean, 26 test files, 510 tests, about 3 s. CI uses
+Baseline today: lint clean, 27 test files, 517 tests, about 3 s. CI uses
 Node 22. The skip flag matters because `playwright` is a devDependency whose
 postinstall downloads hundreds of MB of browsers that nothing in `check` uses
 — the demo recorder drives system Chrome.
@@ -93,9 +93,10 @@ behind the result modal on the *ordinary* path, not the rare one.
 
 **Do not change the tick order.** `tickEvents → tickCrisis → tickDemand →
 resolvePower → tickHeat → tickContracts → tickMaintenance → tickCampaign`. It
-encodes causality, and nothing asserts it: the loop is hand-copied into ten
-test helpers, so reordering `game.js` leaves the whole suite green while the
-shipped game behaves differently. That is the worst failure mode a teaching game has.
+encodes causality, and nothing asserts it: the loop is hand-copied into 17
+test files, so reordering `game.js` leaves the whole suite green while the
+shipped game behaves differently. That is the worst failure mode a teaching
+game has.
 
 **Randomness is injected** — `tickCrisis(dt, elapsed, rng = Math.random)`.
 Never call `Math.random` in a sim module. Schedules use two sentinel values:
@@ -103,7 +104,7 @@ Never call `Math.random` in a sim module. Schedules use two sentinel values:
 "can never fire" (how a campaign level guarantees a deterministic script).
 
 **`resetState()` is hand-maintained.** Add a field to the `STATE` literal and
-forget `resetState()` and all 406 tests still pass — the field is silently
+forget `resetState()` and all 517 tests still pass — the field is silently
 deleted on the first reset. Call `resetBuildingIds()` alongside every
 `resetState()`, and `resetWireIds()` too if you use `src/sim/build.js`.
 

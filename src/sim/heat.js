@@ -11,7 +11,8 @@
 //
 // Tick order (tickHeat): rack heat injection -> 4-neighbour diffusion ->
 // dissipation toward ambient -> CRAC cooling -> building thermals. Every
-// stage takes dt (seconds, already timeScale-scaled) and is a no-op at dt=0.
+// stage takes dt (seconds, already timeScale-scaled) and is a no-op unless
+// dt is finite and > 0 — the house guard, same as every other sim module.
 //
 // One-tick CRAC lag (INTENDED): this module writes crac.duty from THIS
 // tick's local excess heat; sim/power.js turns that duty into a kW request
@@ -56,7 +57,7 @@ function currentDiffusion() {
 
 // Stage 1 — each powered rack adds actualKw * heatPerKw * dt to its own cell.
 export function injectRackHeat(dt) {
-    if (dt === 0) return;
+    if (!Number.isFinite(dt) || dt <= 0) return;
     const field = STATE.heatField;
     for (const b of STATE.buildings) {
         if (b.type !== "rack" || b.actualKw <= 0) continue;
@@ -69,7 +70,7 @@ export function injectRackHeat(dt) {
 // rate is clamped to 0.25 — the explicit-scheme stability limit for a
 // 4-neighbour kernel — so dt spikes cannot make the field oscillate/explode.
 export function diffuseField(dt) {
-    if (dt === 0) return;
+    if (!Number.isFinite(dt) || dt <= 0) return;
     const rate = Math.min(currentDiffusion() * dt, 0.25);
     const field = STATE.heatField;
     for (let z = 0; z < N; z++) {
@@ -90,7 +91,7 @@ export function diffuseField(dt) {
 // Stage 3 — passive loss toward ambient: field += (ambient - field) * k.
 // k is clamped to 1 so a huge dt lands exactly on ambient, never beyond it.
 export function dissipateField(dt) {
-    if (dt === 0) return;
+    if (!Number.isFinite(dt) || dt <= 0) return;
     const k = Math.min(CONFIG.heat.dissipation * dt, 1);
     const ambient = currentAmbientC();
     const field = STATE.heatField;
@@ -167,7 +168,7 @@ function updateCoolingLoop() {
 }
 
 export function applyCracCooling(dt) {
-    if (dt === 0) return;
+    if (!Number.isFinite(dt) || dt <= 0) return;
     const field = STATE.heatField;
     const ambient = currentAmbientC();
     // Pass 1: every cooling head works out how hard it WANTS to run, from
@@ -236,7 +237,7 @@ export function applyCracCooling(dt) {
 // cell into tempC; racks derive throttleFactor (1 at/below throttleStartC,
 // linear to 0 at shutdownC, 0 above).
 export function updateBuildingThermals(dt) {
-    if (dt === 0) return;
+    if (!Number.isFinite(dt) || dt <= 0) return;
     const field = STATE.heatField;
     for (const b of STATE.buildings) {
         b.tempC = field[heatIndex(b.gx, b.gz)];
@@ -253,9 +254,10 @@ export function updateBuildingThermals(dt) {
 }
 
 // One thermal tick. dt is in seconds, already timeScale-scaled by the
-// caller; dt === 0 (pause) freezes the field and every derived value.
+// caller; a non-finite or non-positive dt (pause is dt === 0) freezes the
+// field and every derived value — the house guard, see docs/ARCHITECTURE.md.
 export function tickHeat(dt) {
-    if (dt === 0) return;
+    if (!Number.isFinite(dt) || dt <= 0) return;
     injectRackHeat(dt);
     diffuseField(dt);
     dissipateField(dt);
