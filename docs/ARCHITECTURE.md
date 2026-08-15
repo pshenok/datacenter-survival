@@ -25,10 +25,11 @@ elapsedGameTime += dt          (skipped while the tutorial is active)
 ```
 
 The order encodes causality. Nothing asserts it: the loop is hand-copied into
-nine test helpers (eleven copies, counting the second inline one in
-`tests/campaign.test.mjs` and `tests/prebuilt.test.mjs`), so reordering
-`game.js` leaves the whole suite green while the shipped game behaves
-differently.
+17 test files, 44 copies in all, so reordering `game.js` leaves the whole
+suite green while the shipped game behaves differently. Those two numbers are
+themselves pinned by `tests/docs-counts.test.mjs` — they drifted four times
+before anyone noticed, which is the same argument this file makes for
+generating the FAQ from CONFIG.
 
 Three consequences, none of which are bugs:
 
