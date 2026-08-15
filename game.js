@@ -3,6 +3,7 @@
 // (see docs/specs): demand assigns -> power resolves -> heat responds.
 import { CONFIG } from "./src/core/config.js";
 import { STATE, resetState } from "./src/core/state.js";
+import { normalizeSeed, randomSeedToken, seededRngs } from "./src/core/rng.js";
 import { resetBuildingIds } from "./src/entities/Building.js";
 import { resolvePower } from "./src/sim/power.js";
 import { tickHeat } from "./src/sim/heat.js";
@@ -11,7 +12,7 @@ import { tickCrisis } from "./src/sim/crisis.js";
 import { tickContracts } from "./src/sim/contracts.js";
 import { scene, camera, renderer, resetCamera, focusWorld, gridToWorld, buildingGroup, wireGroup } from "./src/ui/scene.js";
 import { tickMeshes, removeMesh, removeWireMesh, attachMesh, addWireMesh } from "./src/ui/meshes.js";
-import { tickHud, showBanner, showGameOver, resetHudStats, renderInspect, contractLabel, renderLossLedger } from "./src/ui/hud.js";
+import { tickHud, showBanner, showGameOver, resetHudStats, renderInspect, contractLabel, renderLossLedger, shareUrl } from "./src/ui/hud.js";
 import { tickOverlay, toggleThermalOverlay } from "./src/ui/overlay.js";
 import { tickPulses } from "./src/ui/pulses.js";
 import { tickBadges, clearBadges } from "./src/ui/failure-badges.js";
@@ -42,6 +43,18 @@ let tariffWasActive = false;
 let droughtWasActive = false;
 let missedOrders = new Set();
 
+// ---- the run's randomness -------------------------------------------------
+// An UNSEEDED run passes `undefined`, so each tick falls through to the
+// `rng = Math.random` default it has always declared — not a captured copy of
+// Math.random, which would read the same and quietly pin the reference at
+// module-eval time. Nothing about an unseeded run changes. A seeded run swaps
+// in the two streams src/core/rng.js derives from the token; nothing else in
+// the game is touched, because nothing else in the game is random (the demand
+// curve, the heatwave and the day/night bands are all pure functions of the
+// clock).
+const UNSEEDED = { crisis: undefined, contracts: undefined };
+let runRng = UNSEEDED;
+
 function tick(dt) {
     // While the tutorial runs, game time is frozen: demand stays at the gentle
     // base value and no waves, heatwaves, crises or contracts fire (their
@@ -50,11 +63,11 @@ function tick(dt) {
     if (!tutorial.active) STATE.elapsedGameTime += dt;
 
     tickEvents(dt, STATE.elapsedGameTime);
-    tickCrisis(dt, STATE.elapsedGameTime);      // brownout must precede power
+    tickCrisis(dt, STATE.elapsedGameTime, runRng.crisis);       // brownout must precede power
     tickDemand(dt, STATE.elapsedGameTime);
     resolvePower(dt);
     tickHeat(dt);
-    tickContracts(dt, STATE.elapsedGameTime);   // judged on THIS tick's facts
+    tickContracts(dt, STATE.elapsedGameTime, runRng.contracts); // judged on THIS tick's facts
     tickMaintenance(dt, STATE.elapsedGameTime);
     tickCampaign(dt, STATE.elapsedGameTime);    // scripted events + objectives, judged last
 
@@ -242,14 +255,57 @@ function beginRun() {
     refreshAffordability();
     syncPlayPauseUi();
     syncPeakShaveUi(); // resetState() (inside clearWorld) severs the toggle
+    // Every entry point lands here, so this is the one place that can promise
+    // a run never inherits the previous one's stream. armRun() puts a seed
+    // back afterwards; a campaign level simply never calls it.
+    armRun(null);
 }
-window.startGame = () => {
+// Arm (or disarm) the run's randomness. Called AFTER beginRun, because
+// clearWorld -> resetState nulls STATE.seed on the way through.
+function armRun(seed) {
+    const rngs = seededRngs(seed);
+    STATE.seed = rngs ? rngs.seed : null;
+    runRng = rngs || UNSEEDED;
+    syncSeedUrl();
+}
+// The address bar IS the share link, so keep it honest: a seeded run puts its
+// token there, an unseeded one takes it away. Guarded — a sandboxed or
+// file:// context throws on replaceState and a run must not die for a URL.
+function syncSeedUrl() {
+    try {
+        const base = window.location.href.split(/[?#]/)[0];
+        window.history.replaceState(null, "", STATE.seed === null ? base : `${base}?seed=${STATE.seed}`);
+    } catch { /* no history API here — the pill still shows the seed */ }
+}
+function seedFromUrl() {
+    try {
+        return normalizeSeed(new URLSearchParams(window.location.search).get("seed"));
+    } catch {
+        return null;
+    }
+}
+function readSeedInput() {
+    const input = document.getElementById("seed-input");
+    return input ? normalizeSeed(input.value) : null;
+}
+// `seed === undefined` means "whatever the menu box says" (the Power On
+// button); an explicit value — including null — overrides it, which is what
+// Restart and Retry pass so a seeded run replays the SAME room.
+window.startGame = (seed) => {
+    const wanted = seed === undefined ? readSeedInput() : seed;
     beginRun();
+    armRun(wanted);
     // Free play runs the day/night meter. The bands average to 1.0, so this
     // is not a harder game — it is the same bill with a clock attached, and
     // the only mode long enough for load-shifting to be worth learning.
     STATE.tariff.cycleOn = true;
-    if (shouldOfferTutorial()) showCeremony();
+    // A seeded run never opens with the tutorial. The lesson earns money and
+    // builds gear before the clock starts, so a tutorial'd run and a skipped
+    // one are not the same starting room — and "same seed, same run" has to
+    // mean the room too, not just the crises. The saved profile flag is left
+    // exactly as it was: a link someone sent you must not rewrite what you
+    // have already learned.
+    if (STATE.seed === null && shouldOfferTutorial()) showCeremony();
 };
 window.startTutorialGame = () => {
     beginRun();
@@ -257,7 +313,26 @@ window.startTutorialGame = () => {
 };
 window.restartGame = () => {
     document.getElementById("gameover-modal").classList.add("hidden");
-    window.startGame();
+    window.startGame(STATE.seed);   // read BEFORE beginRun clears it
+};
+// Roll a fresh room without editing the URL by hand. Fills the box rather
+// than launching: the player sees the token they are about to play, and the
+// same button works for "give me another one" before they commit.
+window.rollSeed = () => {
+    const input = document.getElementById("seed-input");
+    if (!input) return;
+    input.value = randomSeedToken(Math.random);
+};
+// The seed is copyable wherever it is visible — the HUD pill mid-run and the
+// game-over line — because a run you cannot hand to someone else is exactly
+// the unfalsifiable claim this feature exists to replace.
+window.copySeedLink = () => {
+    const url = shareUrl(STATE.seed);
+    if (!url) return;
+    try {
+        if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
+    } catch { /* no clipboard permission — the game-over field is selectable */ }
+    showBanner(i18n.t("seed_copied", { seed: STATE.seed }), 2500);
 };
 // Campaign entries. Selecting a level opens its BRIEFING (the SS pattern —
 // a level never starts cold); the briefing's Start button launches it,
@@ -334,7 +409,7 @@ window.resumeRun = () => {
 window.retryFromPause = () => {
     document.getElementById("pause-menu-modal").classList.add("hidden");
     if (STATE.campaign.levelId !== null) window.launchCampaignLevel(STATE.campaign.levelId);
-    else window.startGame();
+    else window.startGame(STATE.seed);   // retrying a seeded run replays THAT room
 };
 window.menuFromPause = () => {
     window.backToMenu();
@@ -412,5 +487,15 @@ initCampaignUi({
 });
 resetCamera();
 requestAnimationFrame(animate);
+
+// A shared link lands you IN the run, not on a menu with a box to retype:
+// ?seed=<token> starts free play on that room immediately. Without the
+// parameter this is a no-op and the game boots exactly as it always has.
+const bootSeed = seedFromUrl();
+if (bootSeed !== null) {
+    const input = document.getElementById("seed-input");
+    if (input) input.value = bootSeed;      // so Menu -> Power On replays it
+    window.startGame(bootSeed);
+}
 
 export { CONFIG, STATE, buildingGroup, wireGroup };

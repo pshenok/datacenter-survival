@@ -41,6 +41,15 @@ totals it in dollars.*
   PUE is the number everyone quotes; WUE is the one that gets a datacenter
   into the local newspaper.
 
+- **A run can be handed to someone else.** Free play takes a seed —
+  `?seed=KYIV`, or type one on the menu — and every crisis, every contract
+  and every price window in that run is drawn from it. Two people playing
+  `?seed=KYIV` get the same brownout at the same second, so "I held PUE 1.19
+  for four minutes" stops being a claim and starts being something you can
+  check. The seed rides along in the address bar; the game-over screen hands
+  you the link. Without a seed nothing changes — the game is as random as it
+  always was.
+
 Overheated racks throttle, throttled racks miss SLA, missed SLA drains
 reputation and money. And every kilowatt you fail to serve is **named**:
 badges float the cause over the building responsible, and the ledger totals
@@ -125,12 +134,12 @@ real playthrough.
 ## Status
 
 Thirteen campaign levels across five chapters plus The Lab, nine buildings,
-445 tests. Simulation: wired power with inverse-time breakers, a diffusing
+503 tests. Simulation: wired power with inverse-time breakers, a diffusing
 heat field with part-load cooling, a shared chilled-water loop metered for
 water on a WUE, UPS buffers, standby generators with fuel, grid sags,
 per-substation outages, time-of-use and peak tariffs, droughts, peak shaving
-off the UPS battery, rolling contracts, and per-cause loss attribution.
-English and Ukrainian.
+off the UPS battery, rolling contracts, seeded shareable runs, and per-cause
+loss attribution. English and Ukrainian.
 
 Peak shaving is a toggle, not an upgrade. A charged UPS can serve its subtree
 from the battery instead of the meter, but the battery gives back less than

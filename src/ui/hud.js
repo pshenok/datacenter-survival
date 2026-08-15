@@ -86,6 +86,17 @@ export function tickHud() {
             psEl.classList.add("hidden");
         }
     }
+    // Seed pill. Present only in a seeded run, and clickable there (game.js
+    // owns the copy — src/ui/* reads STATE and writes DOM, nothing else).
+    // An unseeded run must look exactly like the game did before seeds
+    // existed, so the whole element stays hidden rather than showing a dash.
+    const seedEl = el("seed-pill");
+    if (seedEl) {
+        const seeded = STATE.seed !== null;
+        if (seeded) el("seed-pill-value").textContent = STATE.seed;
+        seedEl.classList.toggle("hidden", !seeded);
+    }
+
     el("hud-rep").textContent = `${Math.round(STATE.reputation)}%`;
     el("hud-demand").textContent = `${STATE.demandKw.toFixed(1)} kW`;
     el("hud-served").textContent = `${STATE.servedKw.toFixed(1)} kW`;
@@ -351,6 +362,22 @@ function round2(n) {
     return Math.round(n * 100) / 100;
 }
 
+// ---- the shareable run ---------------------------------------------------
+// The link that reproduces THIS run, or null when there is nothing to share.
+// Built from href rather than origin + pathname so it also works from a
+// file:// copy, where origin is the literal string "null".
+//
+// Deliberately just the link. A pasted "4:12, PUE 1.19" line is the exact
+// unfalsifiable claim seeded runs exist to replace — the numbers are already
+// on the screen above it, and the URL is the half that lets someone check
+// them. There is no backend and there will not be one; the scoreboard is two
+// people playing the same room.
+export function shareUrl(seed) {
+    if (!seed) return null;
+    if (typeof window === "undefined") return null;
+    return `${window.location.href.split(/[?#]/)[0]}?seed=${encodeURIComponent(seed)}`;
+}
+
 // ---- best-run stats (localStorage, guarded like i18n for node) ----------
 const BEST_KEY = "dc_best_run";
 
@@ -413,6 +440,23 @@ export function showGameOver(reason) {
         pue: best.bestPue !== null ? best.bestPue.toFixed(2) : "—",
     });
     statsEl.appendChild(bestLine);
+    renderShare();
     renderLossLedger("gameover-ledger");
     document.getElementById("gameover-modal").classList.remove("hidden");
+}
+
+// The share row under the stats: the seed, and the link that reproduces the
+// room. Hidden outright in an unseeded run — there is nothing honest to hand
+// anyone, and an empty box would only imply there was.
+function renderShare() {
+    const row = document.getElementById("gameover-share");
+    if (!row) return;
+    const url = shareUrl(STATE.seed);
+    if (url === null) {
+        row.classList.add("hidden");
+        return;
+    }
+    document.getElementById("gameover-share-label").textContent = i18n.t("seed_share", { seed: STATE.seed });
+    document.getElementById("gameover-share-url").value = url;
+    row.classList.remove("hidden");
 }

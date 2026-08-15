@@ -133,6 +133,16 @@ export const STATE = {
     //               let the clock run the cycle.
     lab: { on: false, ambientC: null, tariffBand: null },
 
+    // SEEDED RUN (owned by game.js, the composition root — the same place
+    // STATE.peakShave.on and STATE.tariff.cycleOn are written; src/ui/* only
+    // reads it). The normalized seed TOKEN of this run, or null for an
+    // unseeded one. The token, never a generator: an rng in STATE would be a
+    // function every reset has to remember to replace, and the streams
+    // themselves are game.js's business (see src/core/rng.js). Survival only
+    // — a campaign level pins every random schedule to Infinity, so a seed
+    // there would be decoration, and game.js leaves this null for one.
+    seed: null,
+
     // meta
     gameOver: null,         // null | "bankrupt" | "reputation"
     sound: null,
@@ -170,6 +180,9 @@ export function resetState() {
     STATE.losses = { tickKw: {}, totalKwh: {}, blame: [] };
     STATE.peakShave = { on: false };
     STATE.lab = { on: false, ambientC: null, tariffBand: null };
+    // Severed like peakShave.on and tariff.cycleOn: game.js re-arms the seed
+    // after clearWorld(), so a run can never inherit the previous one's.
+    STATE.seed = null;
     STATE.gameOver = null;
 }
 

@@ -91,6 +91,15 @@
     </div>
   </div>
 
+  <!-- Seed pill (seeded runs only; rendered by src/ui/hud.js). Clicking it
+       copies the link to this exact room — a run you cannot hand to someone
+       else is the unfalsifiable claim seeds exist to replace. -->
+  <button id="seed-pill" class="hidden fixed top-4 left-4 z-10 glass-panel rounded-full px-4 py-2 flex items-center gap-2 text-cyan-200 hover:text-white" onclick="copySeedLink()" title="Copy the link to this run" data-i18n-title="seed_pill_tip">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.1" fill="currentColor" stroke="none"/></svg>
+    <span class="text-[10px] uppercase tracking-wide text-gray-500" data-i18n="seed_label">Seed</span>
+    <span id="seed-pill-value" class="text-sm font-bold tracking-widest"></span>
+  </button>
+
   <!-- Paused pill -->
   <div id="paused-pill" class="hidden absolute top-24 left-1/2 -translate-x-1/2 z-10 glass-panel rounded-full px-5 py-2 text-amber-300 text-sm font-bold border border-amber-500/50" data-i18n="paused_pill">
     PAUSED — build freely, then press ▶
@@ -166,6 +175,17 @@
       <h1 class="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-red-400 mb-1 tracking-tighter">DATACENTER<br/>SURVIVAL</h1>
       <p class="text-gray-400 text-xs mb-1" data-i18n="tagline">The physical layer of the cloud</p>
       <p class="text-gray-600 text-[10px] mb-8">v0.1 · sister of <a class="underline hover:text-gray-400" href="https://pshenok.github.io/server-survival/">Server Survival</a></p>
+      <!-- Seed box: type one, paste one from a friend, or roll a fresh one.
+           Empty = the ordinary unseeded game, unchanged. -->
+      <div class="flex items-center gap-2 mb-1">
+        <input id="seed-input" type="text" maxlength="12" autocomplete="off" spellcheck="false"
+               class="flex-1 min-w-0 bg-gray-900/70 border border-gray-700 rounded-lg px-3 py-2 text-xs text-cyan-200 uppercase tracking-widest text-center placeholder-gray-600 focus:outline-none focus:border-cyan-500"
+               placeholder="SEED (OPTIONAL)" data-i18n="seed_placeholder" />
+        <button onclick="rollSeed()" class="glass-panel rounded-lg px-3 py-2 text-gray-300 hover:text-white shrink-0" title="Roll a fresh seed" data-i18n-title="seed_roll_tip">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.1" fill="currentColor" stroke="none"/></svg>
+        </button>
+      </div>
+      <p class="text-gray-600 text-[10px] mb-3 text-left" data-i18n="seed_hint">Same seed, same crises, at the same seconds.</p>
       <button onclick="startGame()" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-4 rounded-lg uppercase tracking-wide mb-3" data-i18n="start_game">Power On</button>
       <button onclick="openCampaign()" class="w-full glass-panel hover:border-emerald-500/50 text-emerald-300 py-3 rounded-lg text-sm mb-3" data-i18n="menu_campaign">Campaign</button>
       <button onclick="startTutorialGame()" class="w-full glass-panel hover:border-amber-500/50 text-amber-300 py-3 rounded-lg text-sm mb-3" data-i18n="menu_tutorial">Tutorial</button>
@@ -255,6 +275,19 @@
       <h2 id="gameover-title" class="text-4xl font-black text-red-400 mb-2">FACILITY DOWN</h2>
       <p id="gameover-reason" class="text-gray-400 mb-1"></p>
       <p id="gameover-stats" class="text-gray-500 text-sm mb-4"></p>
+      <!-- The shareable run (seeded runs only; rendered by src/ui/hud.js).
+           The link, and only the link: the numbers above it are a claim,
+           this is what lets somebody check it. -->
+      <div id="gameover-share" class="hidden text-left mb-5 max-w-xs mx-auto">
+        <div id="gameover-share-label" class="text-[10px] text-gray-500 uppercase tracking-wide mb-1"></div>
+        <div class="flex items-center gap-2">
+          <input id="gameover-share-url" type="text" readonly onclick="this.select()"
+                 class="flex-1 min-w-0 bg-gray-900/70 border border-gray-700 rounded px-2 py-1 text-[11px] text-cyan-200 focus:outline-none focus:border-cyan-500" />
+          <button onclick="copySeedLink()" class="glass-panel rounded px-2 py-1.5 text-gray-300 hover:text-white shrink-0" title="Copy link" data-i18n-title="seed_copy_tip">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path stroke-linecap="round" d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+          </button>
+        </div>
+      </div>
       <div id="gameover-ledger" class="hidden text-left mb-6 max-w-xs mx-auto"></div>
       <button onclick="restartGame()" class="bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-8 rounded-lg uppercase" data-i18n="restart">Restart</button>
     </div>
