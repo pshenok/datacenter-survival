@@ -330,12 +330,10 @@ is a real, verified gap with the fix already located.
 
 ## Licensing
 
-**There is no license declared for this repository yet.** There is no
-`LICENSE` file and `package.json` has no `license` field, so the default is
-all rights reserved and the terms under which contributions are accepted are
-currently undefined. This is an oversight, not a position — the project is
-public, deployed, and asking for contributions. If you are planning anything
-substantial, ask in
-[Discussions](https://github.com/pshenok/datacenter-survival/discussions) and
-the maintainer will settle it. Do not assume MIT because the sister project
-uses it.
+**MIT**, the same as [Server Survival](https://github.com/pshenok/server-survival)
+— see [LICENSE](LICENSE). By opening a pull request you are offering your
+contribution under those terms.
+
+`package.json` keeps `"private": true`, which is about npm and not about
+rights: it stops the dev-tooling manifest being published as a package by
+accident. The game itself is MIT and always served straight from the repo.
