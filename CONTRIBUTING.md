@@ -44,14 +44,13 @@ before you check your server.
 Tooling is optional and only for contributors:
 
 ```bash
-PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i
+npm i
 npm run check     # eslint . && vitest run — exactly what CI runs
 ```
 
 Baseline today: lint clean, 28 test files, 519 tests, about 3 s. CI uses
-Node 22. The skip flag matters because `playwright` is a devDependency whose
-postinstall downloads hundreds of MB of browsers that nothing in `check` uses
-— the demo recorder drives system Chrome.
+Node 22. Nothing here downloads a browser: the demo recorder drives your
+system Chrome through `playwright-core`, which ships no binaries.
 
 ## The invariants, and what breaks when you cross one
 

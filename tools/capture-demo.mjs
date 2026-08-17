@@ -9,7 +9,7 @@
 //   node tools/capture-demo.mjs [port] [outDir]
 //
 // Frames land as PNGs; assemble with ffmpeg (see tools/make-gif.sh).
-import { chromium } from "playwright";
+import { chromium } from "playwright-core";
 import { mkdirSync, rmSync } from "node:fs";
 
 const PORT = process.argv[2] || "8299";
