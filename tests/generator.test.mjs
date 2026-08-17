@@ -160,6 +160,63 @@ describe("standby double-count guards", () => {
         expect(burners.length).toBe(1);
     });
 
+    // THE SAME ROOM, BUILT IN THE OTHER ORDER. The test above wires the
+    // SHALLOW generator first and passes; the guard it leans on walks a
+    // candidate's PARENTS looking for an already-redelivered node, so it can
+    // only ever see a candidate BELOW a wave that has already run. Place the
+    // DEEP generator first and its wave goes first, the shallow generator's
+    // candidate is an ANCESTOR of the redelivered set, that walk never sees
+    // it, and both machines deliver — and buy diesel for — the same two
+    // racks. Which of the two you got depended on nothing a player can see:
+    // the order the buildings happen to sit in STATE.buildings.
+    it("WHICH GENERATOR YOU PLACED FIRST is not a physical fact — the room burns the same fuel either way", () => {
+        function room(deepFirst) {
+            resetState();
+            resetBuildingIds();
+            STATE.heatwave.nextAt = Infinity;
+            STATE.brownout.nextAt = Infinity;
+            STATE.breakdown.nextAt = Infinity;
+            STATE.gridOutage.nextAt = Infinity;
+            STATE.contract.nextAt = Infinity;
+            STATE.demandFixedKw = 10;
+            const { xf, pdu } = chain(5);
+            [place("rack", 14, 5), place("rack", 14, 7)].forEach((r) => wireBuildings(pdu, r));
+            // The ONLY difference between the two runs.
+            const gDeep = deepFirst ? place("generator", 2, 11) : null;
+            const gShallow = place("generator", 2, 8);
+            const deep = gDeep || place("generator", 2, 11);
+            wireBuildings(gShallow, xf);   // the shallow transfer point
+            wireBuildings(deep, pdu);      // ...and one inside its own subtree
+            run(5);
+            STATE.gridOutage.active = true;
+            STATE.gridOutage.endsAt = Infinity;
+            run(20);
+            return {
+                burned: (gShallow.config.tankLiters - gShallow.fuelLiters)
+                    + (deep.config.tankLiters - deep.fuelLiters),
+                carried: gShallow.actualKw + deep.actualKw,
+                served: STATE.servedKw,
+                burners: [gShallow, deep].filter((g) => g.fuelLiters < g.config.tankLiters - 1e-9).length,
+            };
+        }
+
+        const shallowFirst = room(false);
+        const deepFirst = room(true);
+
+        // The racks are served either way — the fix must not buy its honesty
+        // by dropping the load the shallower switch was there to pick up.
+        expect(shallowFirst.served).toBeCloseTo(10, 0);
+        expect(deepFirst.served).toBeCloseTo(10, 0);
+        // ONE machine carries the subtree, and ONE machine pays for it.
+        expect(shallowFirst.burners).toBe(1);
+        expect(deepFirst.burners).toBe(1);
+        expect(deepFirst.carried).toBeLessThan(15);      // one subtree's pull, once
+        // ...and the tank reads the same to the drop, because placement
+        // order is not a physical fact about a datacenter.
+        expect(deepFirst.burned).toBeCloseTo(shallowFirst.burned, 9);
+        expect(deepFirst.burned).toBeGreaterThan(0);
+    });
+
     it("an ancestor UPS stops draining once the generator carries everything below it", () => {
         // Standby attached BELOW the UPS: chain feed→xf→ups→pdu, generator
         // standby to the PDU. During the outage the UPS bridges the cutover,

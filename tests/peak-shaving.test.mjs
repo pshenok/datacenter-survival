@@ -21,7 +21,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { CONFIG } from "../src/core/config.js";
 import { STATE, resetState } from "../src/core/state.js";
 import { Building, resetBuildingIds } from "../src/entities/Building.js";
-import { resolvePower, unwire, wireBuildings } from "../src/sim/power.js";
+import { feedIsDark, resolvePower, unwire, wireBuildings } from "../src/sim/power.js";
 import { tickDemand, tickEvents } from "../src/sim/demand.js";
 import { tickHeat } from "../src/sim/heat.js";
 import { tickContracts } from "../src/sim/contracts.js";
@@ -453,21 +453,111 @@ describe("batteryKw is credited ONCE per delivered kW, not once per UPS", () => 
 });
 
 describe("sim/demand.js bills grid-sourced draw only", () => {
-    it("THE FORMULA: money is charged on (totalDrawKw - batteryKw), not totalDrawKw", () => {
-        // Isolate the billing arithmetic from power.js entirely: pin
-        // totalDrawKw/batteryKw by hand and zero out demand so revenue and
-        // SLA terms drop out, leaving only the power-cost term to compare.
+    it("THE FORMULA: the meter charges what came off the GRID, not what the facility drew", () => {
+        // Isolate the billing arithmetic from power.js entirely: pin the
+        // draw split by hand and zero out demand so revenue and SLA terms
+        // drop out, leaving only the power-cost term to compare. power.js is
+        // what displaces shaved kW out of gridKw — the whole-loop proof of
+        // that is the per-tick invariant at the bottom of this file.
         STATE.demandFixedKw = 0;
-        STATE.totalDrawKw = 20;
-        STATE.batteryKw = 12;
+        // Three sources, three prices. The split is deliberately one no
+        // single subtraction can reproduce: a meter that charged
+        // (totalDrawKw - batteryKw) would bill 8 here, not 5, because a
+        // generator is not a battery and neither of them is the utility.
+        STATE.totalDrawKw = 20;     // the facility drew 20 — PUE's numerator
+        STATE.batteryKw = 12;       // 12 of it came out of a battery
+        STATE.gridKw = 5;           // 5 off a feed; the other 3 off diesel
         STATE.tariff.active = true;
         STATE.tariff.multiplier = 2;
         STATE.tariff.endsAt = Infinity;
         const before = STATE.money;
         tickDemand(DT, 1);
-        const billedKw = STATE.totalDrawKw - STATE.batteryKw; // 8, unless demand.js mutated them
-        const expected = -(billedKw * CONFIG.economy.powerCostPerKwh * STATE.tariff.multiplier * (DT / 60));
-        expect(STATE.money - before).toBeCloseTo(expected, 9);
+        const perKw = CONFIG.economy.powerCostPerKwh * STATE.tariff.multiplier * (DT / 60);
+        expect(STATE.money - before).toBeCloseTo(-(STATE.gridKw * perKw), 9);
+        // ...and neither the facility draw nor the draw-minus-battery is
+        // what was charged, which is the whole claim.
+        expect(STATE.money - before).not.toBeCloseTo(-(STATE.totalDrawKw * perKw), 9);
+        expect(STATE.money - before).not.toBeCloseTo(
+            -((STATE.totalDrawKw - STATE.batteryKw) * perKw), 9
+        );
+    });
+
+    // THE LESSON THIS LEVEL EXISTS FOR: a generator and a battery are how
+    // you stop paying the utility for a while. The meter used to charge the
+    // whole facility draw through a total blackout — the diesel the
+    // generator was burning, and the kW coming out of a UPS — so the room
+    // paid the city for energy the city had visibly stopped delivering, on
+    // top of the fuel and the recharge it was already paying for.
+    it("A UTILITY CANNOT BILL YOU FOR A BLACKOUT: nothing came off the meter, so nothing is charged", () => {
+        STATE.demandFixedKw = 12;
+        // One room on a generator, one behind a UPS buffer. No grid feed is
+        // alive for either of them.
+        const gen = place("generator", 2, 2);
+        const pduG = place("pdu", 5, 2);
+        wireBuildings(gen, pduG);
+        for (let i = 0; i < 2; i++) wireBuildings(pduG, place("rack", 8, 2 + i));
+        const feed = place("grid_feed", 2, 10);
+        const ups = place("ups", 5, 10);
+        const pduU = place("pdu", 8, 10);
+        wireBuildings(feed, ups);
+        wireBuildings(ups, pduU);
+        wireBuildings(pduU, place("rack", 11, 10));
+
+        STATE.gridOutage.active = true;
+        STATE.gridOutage.endsAt = Infinity;
+        STATE.gridOutage.scope = "all";
+
+        let charged = 0;
+        let drew = 0;
+        let servedTicks = 0;
+        runFull(6, () => {
+            charged += STATE.gridKw;
+            drew += STATE.totalDrawKw;
+            if (STATE.itDrawKw > 0) servedTicks++;
+        });
+
+        // The room really did run — on diesel and on stored charge.
+        expect(servedTicks).toBeGreaterThan(100);
+        expect(drew).toBeGreaterThan(0);
+        expect(gen.fuelLiters).toBeLessThan(gen.config.tankLiters);   // fuel paid for it
+        expect(ups.bufferOwedKws).toBeGreaterThan(0);                 // recharge will pay for it
+        // ...and the utility delivered NOT ONE kW, so it billed nothing.
+        expect(charged).toBe(0);
+    });
+
+    // The mirror, and the reason this is not an `if (gridOutage.active)`:
+    // the grid can be perfectly healthy and a room still be off it.
+    it("A ROOM ON A GENERATOR pays in fuel, not on the meter — with the grid perfectly healthy", () => {
+        STATE.demandFixedKw = 24;
+        const gen = place("generator", 2, 2);
+        const pduG = place("pdu", 5, 2);
+        wireBuildings(gen, pduG);
+        for (let i = 0; i < 2; i++) wireBuildings(pduG, place("rack", 8, 2 + i));
+        const feed = place("grid_feed", 2, 10);
+        const pduF = place("pdu", 5, 10);
+        wireBuildings(feed, pduF);
+        const metered = [];
+        for (let i = 0; i < 2; i++) {
+            const r = place("rack", 8, 10 + i);
+            wireBuildings(pduF, r);
+            metered.push(r);
+        }
+
+        let charged = 0;
+        let meteredDraw = 0;
+        let facilityDraw = 0;
+        runFull(6, () => {
+            charged += STATE.gridKw;
+            meteredDraw += metered.reduce((s, x) => s + x.actualKw, 0);
+            facilityDraw += STATE.totalDrawKw;
+        });
+
+        expect(STATE.gridOutage.active).toBe(false);   // nothing is wrong with the grid
+        expect(gen.fuelLiters).toBeLessThan(gen.config.tankLiters);
+        // The meter charged the fed half and ONLY the fed half — half the
+        // facility's draw, to nine decimals.
+        expect(charged).toBeCloseTo(meteredDraw, 9);
+        expect(charged).toBeCloseTo(facilityDraw / 2, 9);
     });
 
     it("batteryKw >= totalDrawKw never bills a negative power cost (clamped)", () => {
@@ -678,6 +768,101 @@ describe("a recharging UPS is a load on its own upstream", () => {
             maxOverhead = Math.max(maxOverhead, STATE.totalDrawKw - STATE.itDrawKw);
         }
         expect(maxOverhead).toBeCloseTo(0, 9);     // not one kW of charger on the meter
+    });
+});
+
+// A UPS bridging an outage spends SECONDS at its full rating however little
+// it is carrying — that is the question the bridge answers, "how long do I
+// have?", and every campaign level is proven against it. bufferOwedKws is a
+// different quantity: the ENERGY that actually left, and the exact figure the
+// charger buys back on the meter. When a transfer switch below the UPS hands
+// part of the bridged subtree to a generator, the battery stops delivering
+// that part — and a book that still says otherwise makes the recharge cost a
+// multiple of the outage that caused it.
+describe("a bridged subtree a GENERATOR took is not energy the battery gave up", () => {
+    // feed -> ups -> transformer -> { pduGen -> 2 racks , pduStay -> 1 rack }
+    // generator --standby--> pduGen
+    function room() {
+        STATE.demandFixedKw = 18;
+        const feed = place("grid_feed", 2, 2);
+        const ups = place("ups", 5, 2);
+        const tr = place("transformer", 8, 2);
+        const pduGen = place("pdu", 11, 2);
+        const pduStay = place("pdu", 11, 8);
+        wireBuildings(feed, ups);
+        wireBuildings(ups, tr);
+        wireBuildings(tr, pduGen);
+        wireBuildings(tr, pduStay);
+        const taken = [];
+        for (let i = 0; i < 2; i++) {
+            const r = place("rack", 14, 2 + i);
+            wireBuildings(pduGen, r);
+            taken.push(r);
+        }
+        const left = [place("rack", 14, 8)];
+        wireBuildings(pduStay, left[0]);
+        const gen = place("generator", 2, 12);
+        wireBuildings(gen, pduGen);
+        return { feed, ups, tr, pduGen, pduStay, taken, left, gen };
+    }
+
+    it("THE BATTERY OWES WHAT IT HANDED OVER, not what the room pulled before the switch closed", () => {
+        const r = room();
+        STATE.gridOutage.active = true;
+        STATE.gridOutage.endsAt = Infinity;
+
+        let booked = 0;
+        let reallyLeft = 0;
+        let afterPickupBooked = 0;
+        let afterPickupReal = 0;
+        let pickupTicks = 0;
+
+        for (let i = 0; i < Math.round(12 / DT); i++) {
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            tickEvents(DT, t);
+            tickDemand(DT, t);
+            const owedBefore = r.ups.bufferOwedKws;
+            const secBefore = r.ups.bufferLeft;
+            resolvePower(DT);
+            const drainedSec = secBefore - r.ups.bufferLeft;
+            // GROUND TRUTH, read off the delivered state: the load under this
+            // UPS that the GENERATOR is not carrying. Before the cutover
+            // that is the whole room; after it, only the branch the wave
+            // left behind.
+            const allLoad = [...r.taken, ...r.left].reduce((s, x) => s + x.actualKw, 0);
+            const onBattery = Math.max(0, allLoad - r.gen.actualKw);
+            booked += r.ups.bufferOwedKws - owedBefore;
+            reallyLeft += onBattery * drainedSec;
+            if (r.gen.actualKw > 0) {
+                pickupTicks++;
+                afterPickupBooked += r.ups.bufferOwedKws - owedBefore;
+                afterPickupReal += onBattery * drainedSec;
+            }
+        }
+
+        // The run really went through a cutover with the bridge still live.
+        expect(pickupTicks).toBeGreaterThan(50);
+        expect(afterPickupReal).toBeGreaterThan(0);
+        // The generator took 12 of the 18 kW, so a book that never noticed
+        // charges the battery 3x on every tick after pickup.
+        expect(afterPickupBooked).toBeCloseTo(afterPickupReal, 9);
+        expect(booked).toBeCloseTo(reallyLeft, 9);
+        expect(booked).toBeGreaterThan(0);
+    });
+
+    it("...and the UPS stops REPORTING the kW a generator is carrying", () => {
+        const r = room();
+        STATE.gridOutage.active = true;
+        STATE.gridOutage.endsAt = Infinity;
+        runFull(r.gen.config.cutoverSec + 1);
+        expect(r.gen.actualKw).toBeGreaterThan(0);       // the switch closed
+        expect(r.ups.upsMode).toBe("bridging");          // ...and the bridge is still up
+        // 18 kW before the switch closed, 6 after it. The inspector reads
+        // this field, so a stale one tells the player the battery is
+        // carrying three times what it is.
+        expect(r.ups.actualKw).toBeCloseTo(6, 9);
+        expect(r.left[0].actualKw).toBeCloseTo(6, 9);    // and the branch really is served
     });
 });
 
@@ -925,8 +1110,14 @@ describe("THE LEDGER: a credited kW.s came out of a battery, or it did not happe
     //                                                        above a serviced link
     //   grid_feed -> ups -> ups -> pdu -> 2 racks            a CHARGER inside a
     //   generator --standby--> the upper ups                 re-delivered subtree
+    //   grid_feed -> transformer -> pdu -> 2 racks           TWO TRANSFER
+    //   generator --standby--> that transformer              SWITCHES IN SERIES,
+    //   generator --standby--> that pdu                      deep one placed first
+    //   grid_feed -> ups -> transformer -> pdu -> 2 racks    a bridge only
+    //                              \--> pdu -> 1 rack        PARTLY transferred
+    //   generator --standby--> the first of those pdus
     function facility() {
-        STATE.demandFixedKw = 66;                      // every rack at its full 6 kW
+        STATE.demandFixedKw = 96;                      // every rack at its full 6 kW
         const feedA = place("grid_feed", 2, 5);
         const upsA = place("ups", 5, 5);
         const upsB = place("ups", 8, 5);
@@ -992,7 +1183,50 @@ describe("THE LEDGER: a credited kW.s came out of a battery, or it did not happe
         wireBuildings(upsE, pduE);
         for (let i = 0; i < 2; i++) wireBuildings(pduE, place("rack", 27, 21 + i));
         const gen3 = place("generator", 18, 25);       // wired standby mid-run
-        return { upsA, upsB, upsC, upsD, upsE, gen, gen2, gen3, pduB, trC, armed: false };
+
+        // TWO TRANSFER SWITCHES IN SERIES on one chain: one generator's
+        // candidate is an ANCESTOR of the other's. The DEEP machine is placed
+        // FIRST on purpose — that is the order in which the shallower
+        // candidate is invisible to a guard that only walks a candidate's
+        // parents, and both machines then carry (and buy diesel for) the same
+        // two racks. Placement order is not a physical fact about a room, so
+        // the invariants below have to hold in this order too.
+        const feedE = place("grid_feed", 2, 27);
+        const trE = place("transformer", 5, 27);
+        const pduF = place("pdu", 8, 27);
+        wireBuildings(feedE, trE);
+        wireBuildings(trE, pduF);
+        for (let i = 0; i < 2; i++) wireBuildings(pduF, place("rack", 11, 27 + i));
+        const gen5 = place("generator", 14, 27);       // deep
+        const gen4 = place("generator", 14, 29);       // shallow
+        wireBuildings(gen4, trE);
+        wireBuildings(gen5, pduF);
+
+        // A BRIDGE THE WAVE ONLY PARTLY TAKES. upsF loses its own feed and
+        // bridges the whole 18 kW below it; the transfer switch then hands
+        // the 12 kW under pduG2 to a generator and LEAVES the 6 kW under
+        // pduH on the battery. The bridge is still up, so it still spends
+        // seconds — but the energy it hands over is 6 kW, not 18, and only
+        // this shape can tell those two numbers apart.
+        const feedF = place("grid_feed", 17, 27);
+        const upsF = place("ups", 20, 27);
+        const trF = place("transformer", 23, 27);
+        const pduG2 = place("pdu", 26, 27);
+        const pduH = place("pdu", 29, 27);
+        wireBuildings(feedF, upsF);
+        wireBuildings(upsF, trF);
+        wireBuildings(trF, pduG2);
+        wireBuildings(trF, pduH);
+        for (let i = 0; i < 2; i++) wireBuildings(pduG2, place("rack", 26, 28 + i));
+        wireBuildings(pduH, place("rack", 29, 28));
+        const gen6 = place("generator", 17, 29);
+        wireBuildings(gen6, pduG2);
+
+        return {
+            upsA, upsB, upsC, upsD, upsE, upsF,
+            gen, gen2, gen3, gen4, gen5, gen6,
+            pduB, trC, armed: false,
+        };
     }
 
     // The player's hand on the toggle and the city's hand on the meter. The
@@ -1182,5 +1416,298 @@ describe("THE LEDGER: a credited kW.s came out of a battery, or it did not happe
         // The two books never disagree, so `restored` is read exactly and the
         // invariant above carries no slack for a bug to hide in.
         expect(seen.nameplateRefills).toBe(0);
+    });
+
+    // ---- THE OTHER THREE BOOKS ------------------------------------------
+    // The two invariants above watch the battery credit. Three more pairs of
+    // numbers describe one physical quantity each, and each pair has been
+    // caught disagreeing: the fuel a generator burns against the kW it
+    // carries, the energy a bridge books against the energy it handed over,
+    // and the kW the meter charges against the kW a utility delivered. They
+    // are asserted here, on the same all-hazards run, because a room with
+    // one hazard in it is how the first six of these shipped.
+
+    // What every LIVE ROOT put out this tick. A grid feed's actualKw is its
+    // carry; a dark one carries nothing and neither does an empty generator.
+    function rootOutput() {
+        let feeds = 0;
+        let gens = 0;
+        for (const b of STATE.buildings) {
+            if (b.config.chainRole !== "source") continue;
+            if (b.type === "generator") gens += Math.max(0, b.actualKw);
+            else if (!feedIsDark(b)) feeds += Math.max(0, b.actualKw);
+        }
+        return { feeds, gens };
+    }
+
+    const byId = (id) => STATE.buildings.find((b) => b.id === id) || null;
+
+    function subtreeOf(node) {
+        const out = [];
+        const stack = [...node.childIds];
+        while (stack.length) {
+            const k = byId(stack.pop());
+            if (!k) continue;
+            out.push(k);
+            stack.push(...k.childIds);
+        }
+        return out;
+    }
+
+    // A charging UPS's draw, recovered from the ENERGY that landed in it
+    // rather than from any carried-kW field: restored = draw * eff * dt is
+    // the module's own definition, so inverting it gives the charger back
+    // without asking a link what it thinks it is carrying.
+    function chargerKwOf(u, before) {
+        const was = before.get(u.id);
+        const byCharge = (u.bufferLeft - was.sec) * (u.config.capacityKw || 0);
+        const byDebt = was.owed - u.bufferOwedKws;
+        const landed = Math.max(0, Math.min(byCharge, byDebt));
+        return landed / ((u.config.roundTripEff || 1) * DT);
+    }
+
+    // What a bridging UPS is REALLY handing down, per UPS rather than pooled
+    // over the facility: the load its subtree actually drew, plus any charger
+    // running inside it, MINUS whatever a closed transfer switch inside that
+    // subtree is carrying instead. Pooling this across the whole room leaves
+    // standing slack — the peak-shaved kW of some unrelated room is sourced
+    // from a battery and still carried by the feed above it, and a pooled
+    // ceiling has to allow for that, which is exactly the room an inflated
+    // bridge needs to hide in. Per UPS, nothing has to be allowed for.
+    function handedDownByBridge(ups, before) {
+        const under = subtreeOf(ups);
+        const inside = new Set(under.map((n) => n.id));
+        let sum = 0;
+        for (const n of under) {
+            if (n.config.chainRole === "load") sum += Math.max(0, n.actualKw);
+            else if (n.type === "ups") sum += chargerKwOf(n, before);
+        }
+        // A transfer switch that has actually closed is carrying its node,
+        // not the battery upstream of it. cutoverLeft === 0 is the switch
+        // being shut; before that the bridge is still feeding the node and
+        // the load below it must stay in the ceiling.
+        for (const n of STATE.buildings) {
+            if (!n.standbyParentId || !inside.has(n.id)) continue;
+            const g = byId(n.standbyParentId);
+            if (!g || g.actualKw <= 0 || g.cutoverLeft > 0) continue;
+            sum -= Math.max(0, n.actualKw);
+        }
+        return sum;
+    }
+
+    it("holds on EVERY tick: fuel burned, energy bridged, and kW billed each match what physically happened", () => {
+        const room = facility();
+        const seen = {
+            burning: 0, twoBurning: 0, bridging: 0, transferredBridge: 0,
+            metered: 0, darkTicks: 0, shaved: 0, nestedPair: 0,
+            fuelBurnedL: 0, genKwTicks: 0, billedKw: 0, feedKw: 0,
+        };
+        let brokeFuel = null;
+        let brokeBridge = null;
+        let brokeMeter = null;
+
+        for (let i = 0; i < Math.round(200 / DT); i++) {
+            STATE.elapsedGameTime += DT;
+            const t = STATE.elapsedGameTime;
+            script(t, room);
+            tickEvents(DT, t);
+            tickDemand(DT, t);
+
+            const before = books();
+            const tank = new Map();
+            for (const b of STATE.buildings) {
+                if (b.type === "generator") tank.set(b.id, b.fuelLiters);
+            }
+            resolvePower(DT);
+
+            // -- 1. FUEL BURNED vs kW CARRIED ---------------------------
+            // Per machine the burn follows its own carry exactly, and
+            // between them no two machines may carry the same load: the
+            // facility cannot draw less than its generators are burning
+            // diesel for. Two transfer switches in series used to bill two
+            // tanks for one set of racks, and which of them depended only on
+            // the order the buildings sat in STATE.buildings.
+            let genKw = 0;
+            let burning = 0;
+            for (const b of STATE.buildings) {
+                if (b.type !== "generator") continue;
+                genKw += Math.max(0, b.actualKw);
+                const burned = tank.get(b.id) - b.fuelLiters;
+                if (burned > 1e-12) burning++;
+                seen.fuelBurnedL += burned;
+                const expected = b.actualKw > 0
+                    ? Math.min(tank.get(b.id), b.actualKw * (DT / 60) * b.config.litersPerKwh)
+                    : 0;
+                if (Math.abs(burned - expected) > 1e-9 && brokeFuel === null) {
+                    brokeFuel = { atSec: +t.toFixed(2), why: "burn does not match carry", burned, expected, actualKw: b.actualKw };
+                }
+            }
+            if (genKw > STATE.totalDrawKw + 1e-9 && brokeFuel === null) {
+                brokeFuel = {
+                    atSec: +t.toFixed(2), why: "generators carry more than the facility drew",
+                    genKw, totalDrawKw: STATE.totalDrawKw,
+                };
+            }
+            seen.genKwTicks += genKw;
+            if (burning > 0) seen.burning++;
+            if (burning > 1) seen.twoBurning++;
+            // The two-switches-in-series branch really transferred: the
+            // SHALLOW machine is the one that must end up carrying, whichever
+            // order the two were placed in.
+            if (room.gen4.actualKw > 0) seen.nestedPair++;
+
+            // -- 2. bufferOwedKws vs ENERGY THAT ACTUALLY LEFT ----------
+            // A bridge may only book the load no live root is carrying. A
+            // generator picking up part of a bridged subtree means the
+            // battery never handed that part over — and the charger buys
+            // this exact figure back on the meter, so an inflated book is
+            // an inflated bill.
+            let bridging = 0;
+            for (const b of STATE.buildings) {
+                if (b.type !== "ups" || b.upsMode !== "bridging") continue;
+                bridging++;
+                const booked = b.bufferOwedKws - before.get(b.id).owed;
+                const ceilingKws = Math.max(0, handedDownByBridge(b, before)) * DT;
+                if (booked > ceilingKws + 1e-9 && brokeBridge === null) {
+                    brokeBridge = {
+                        atSec: +t.toFixed(2), ups: b.id, booked, ceilingKws,
+                        upsActualKw: b.actualKw, totalDrawKw: STATE.totalDrawKw,
+                    };
+                }
+            }
+            if (bridging > 0) seen.bridging++;
+            // THE shape this invariant exists for, named exactly rather than
+            // as "some generator somewhere was running": upsF is bridging
+            // and the transfer switch below it has taken part — not all — of
+            // what it was carrying.
+            if (room.upsF.upsMode === "bridging" && room.gen6.actualKw > 0) {
+                seen.transferredBridge++;
+            }
+
+            // -- 3. kW BILLED vs kW THAT CAME FROM A GRID FEED ----------
+            // The meter may never charge for more than the live feeds put
+            // out, and during a total blackout it may not charge at all —
+            // the generator already paid in fuel and the battery pays in the
+            // recharge, so billing them too is charging twice for energy no
+            // utility delivered.
+            const { feeds } = rootOutput();
+            const anyFeedLive = STATE.buildings.some(
+                (b) => b.type === "grid_feed" && !feedIsDark(b)
+            );
+            if (STATE.gridKw > feeds + 1e-9 && brokeMeter === null) {
+                brokeMeter = { atSec: +t.toFixed(2), why: "billed more than the feeds delivered", gridKw: STATE.gridKw, feeds };
+            }
+            if (!anyFeedLive && STATE.gridKw > 1e-9 && brokeMeter === null) {
+                brokeMeter = { atSec: +t.toFixed(2), why: "billed during a total blackout", gridKw: STATE.gridKw, totalDrawKw: STATE.totalDrawKw };
+            }
+            if (STATE.gridKw > STATE.totalDrawKw + 1e-9 && brokeMeter === null) {
+                brokeMeter = { atSec: +t.toFixed(2), why: "billed more than the facility drew", gridKw: STATE.gridKw, totalDrawKw: STATE.totalDrawKw };
+            }
+            seen.billedKw += STATE.gridKw;
+            seen.feedKw += feeds;
+            if (STATE.gridKw > 1e-9) seen.metered++;
+            if (!anyFeedLive) seen.darkTicks++;
+            if (STATE.batteryKw > 1e-9) seen.shaved++;
+        }
+
+        expect(brokeFuel).toBe(null);
+        expect(brokeBridge).toBe(null);
+        expect(brokeMeter).toBe(null);
+
+        // ...and the run really did reach every shape each invariant is
+        // about, so green cannot mean the hazard never happened.
+        expect(seen.burning).toBeGreaterThan(200);        // generators carried, at length
+        expect(seen.twoBurning).toBeGreaterThan(0);       // and two of them at once
+        expect(seen.nestedPair).toBeGreaterThan(100);     // incl. two switches in series
+        expect(seen.fuelBurnedL).toBeGreaterThan(1);      // real diesel
+        expect(seen.bridging).toBeGreaterThan(0);         // buffers bridged
+        expect(seen.transferredBridge).toBeGreaterThan(0);// with a transfer alongside
+        expect(seen.darkTicks).toBeGreaterThan(100);      // a total blackout happened
+        expect(seen.metered).toBeGreaterThan(1000);       // and the meter ran the rest
+        expect(seen.shaved).toBeGreaterThan(200);         // through shaving too
+        // The meter charged strictly less than the facility drew, and
+        // strictly more than nothing — an invariant satisfied by billing
+        // zero would prove nothing at all.
+        expect(seen.billedKw).toBeGreaterThan(0);
+        expect(seen.billedKw).toBeLessThan(seen.feedKw + 1e-9);
+        expect(seen.genKwTicks).toBeGreaterThan(0);
+    });
+
+    // The invariant above proves STATE.gridKw is the honest quantity. This
+    // one proves it is the quantity the METER actually charges, which is a
+    // separate claim living in a separate module — and it reads the charge
+    // out of the player's money rather than restating demand.js's formula,
+    // because a test that restates the formula it is checking proves only
+    // that two copies of it agree.
+    //
+    // The trick: STATE.tariff multiplies the power line and NOTHING else
+    // (not water, not SLA, not revenue — that separation is the two_utilities
+    // lesson). Play the identical run twice, once with the multiplier at
+    // zero, and the difference in money IS the power bill, tick by tick.
+    it("THE METER: the money charged for power is the kW that came off a feed, and nothing else", () => {
+        const PRICE = CONFIG.economy.powerCostPerKwh;
+
+        function pass(zeroTariff) {
+            resetState();
+            resetBuildingIds();
+            pinSchedules();
+            const room = facility();
+            if (zeroTariff) {
+                STATE.tariff.active = true;
+                STATE.tariff.multiplier = 0;
+                STATE.tariff.endsAt = Infinity;
+            }
+            const deltas = [];
+            const gridKws = [];
+            for (let i = 0; i < Math.round(200 / DT); i++) {
+                STATE.elapsedGameTime += DT;
+                const t = STATE.elapsedGameTime;
+                script(t, room);
+                tickEvents(DT, t);
+                const before = STATE.money;
+                tickDemand(DT, t);
+                deltas.push(STATE.money - before);
+                resolvePower(DT);
+                gridKws.push(STATE.gridKw);
+            }
+            return { deltas, gridKws, gameOver: STATE.gameOver };
+        }
+
+        const paid = pass(false);
+        const free = pass(true);
+        // Both passes must have played the SAME run, or the subtraction is
+        // comparing two different facilities.
+        expect(paid.gameOver).toBe(null);
+        expect(free.gameOver).toBe(null);
+        expect(paid.gridKws).toEqual(free.gridKws);
+
+        let broke = null;
+        let chargedKws = 0;
+        let meteredTicks = 0;
+        let freeTicks = 0;
+        for (let i = 0; i < paid.deltas.length; i++) {
+            // What the utility took off the player this tick, in kW.
+            const chargedKw = (free.deltas[i] - paid.deltas[i]) / (PRICE * (DT / 60));
+            // tickDemand bills on the PREVIOUS tick's resolution — the
+            // one-tick lag documented in docs/ARCHITECTURE.md — so this
+            // tick's charge answers to the gridKw resolved last tick.
+            const owedKw = i === 0 ? 0 : paid.gridKws[i - 1];
+            if (Math.abs(chargedKw - owedKw) > 1e-6 && broke === null) {
+                broke = {
+                    atSec: +((i + 1) * DT).toFixed(2),
+                    chargedKw, kwFromAGridFeed: owedKw,
+                };
+            }
+            chargedKws += chargedKw * DT;
+            if (chargedKw > 1e-9) meteredTicks++;
+            if (chargedKw <= 1e-9 && owedKw <= 1e-9) freeTicks++;
+        }
+
+        expect(broke).toBe(null);
+        // The run really did both: pay a utility, and run stretches on
+        // diesel and stored charge paying it nothing.
+        expect(meteredTicks).toBeGreaterThan(1000);
+        expect(freeTicks).toBeGreaterThan(100);
+        expect(chargedKws).toBeGreaterThan(0);
     });
 });

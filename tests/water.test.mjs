@@ -280,6 +280,7 @@ describe("water is money, on the meter, at the meter's scale", () => {
     it("…and the drought never touches power", () => {
         STATE.demandFixedKw = 0;
         STATE.totalDrawKw = 20;
+        STATE.gridKw = 20;                  // all of it off the utility feed
         STATE.water.litersPerHour = 0;
         const before = STATE.money;
         tickDemand(30, 0);
@@ -288,6 +289,7 @@ describe("water is money, on the meter, at the meter's scale", () => {
         fresh();
         STATE.demandFixedKw = 0;
         STATE.totalDrawKw = 20;
+        STATE.gridKw = 20;
         forceDrought();
         const before2 = STATE.money;
         tickDemand(30, 0);

@@ -56,9 +56,18 @@ export const STATE = {
                              // draw; PUE's numerator, UNCHANGED in meaning by
                              // peak shaving (see batteryKw below)
     // kW of totalDrawKw sourced from a UPS buffer THIS tick (peak shaving),
-    // not from the grid. sim/demand.js bills (totalDrawKw - batteryKw) —
-    // the meter, not the facility-draw/PUE number, is what shaving touches.
+    // not from the grid. The HUD reads it to show what the toggle is saving;
+    // the meter no longer subtracts it, because gridKw below already counts
+    // only what came off a feed.
     batteryKw: 0,
+    // kW of totalDrawKw that actually came THROUGH A LIVE GRID FEED this
+    // tick — the only quantity a utility may bill, and what sim/demand.js
+    // bills. Everything else the facility drew came out of a generator or a
+    // battery, both of which already pay for themselves (fuel, and the
+    // recharge). Derived from the topology in sim/power.js, never from the
+    // outage flag: a scoped outage and a generator-fed room on a perfectly
+    // healthy grid are the same question, and only the topology answers both.
+    gridKw: 0,
 
     // economy & standing
     money: CONFIG.economy.startMoney,
@@ -164,6 +173,7 @@ export function resetState() {
     STATE.itDrawKw = 0;
     STATE.totalDrawKw = 0;
     STATE.batteryKw = 0;
+    STATE.gridKw = 0;
     STATE.money = CONFIG.economy.startMoney;
     STATE.reputation = CONFIG.sla.startReputation;
     STATE.heatwave = { active: false, endsAt: 0, nextAt: CONFIG.events.heatwave.firstAtSec };

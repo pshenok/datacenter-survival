@@ -9,10 +9,23 @@
 //                       tick for the same reason the battery credit is: the
 //                       standby wave resolves a subtree twice and the second
 //                       resolution has to replace the first, not add to it.
+//   STATE.gridKw      — of totalDrawKw, how much actually came THROUGH A
+//                       LIVE GRID FEED this tick. This is what sim/demand.js
+//                       bills, and the only thing a utility may bill: the
+//                       rest came off a generator (already paid for in fuel)
+//                       or out of a battery (already paid for in the
+//                       recharge). "Grid" enters the model in exactly one
+//                       place — a source of type grid_feed that is not dark
+//                       — and rides down the chain like the credit below, so
+//                       a SCOPED outage and a generator-fed room on a
+//                       perfectly healthy grid both come out right without
+//                       anything reading STATE.gridOutage.
 //   STATE.batteryKw   — of totalDrawKw, how much was served from a UPS
 //                       buffer this tick (peak shaving) rather than the
-//                       grid. sim/demand.js bills (totalDrawKw - batteryKw);
-//                       totalDrawKw/PUE do not change meaning — see below.
+//                       grid. The HUD's signal for what the toggle is
+//                       saving; the meter does not subtract it, because
+//                       shaving displaces the kW out of gridKw where it
+//                       happens. totalDrawKw/PUE do not change meaning.
 //                       Banked at the LOADS that consumed it, never once per
 //                       UPS traversed: ups -> ups is a legal edge, and
 //                       crediting per UPS bills a two-deep chain twice. Held
@@ -25,7 +38,13 @@
 //   actualKw, powered  — per-tick resolution results (links carry, loads draw)
 //   bufferLeft         — UPS buffer seconds remaining
 //   bufferOwedKws      — kW.s that actually left the battery and must be
-//                        bought back; what the charger works down
+//                        bought back; what the charger works down. For the
+//                        outage bridge it is booked in 5c, AFTER the standby
+//                        wave, off what the UPS ended up carrying — a
+//                        generator taking half a bridged subtree means the
+//                        battery never handed that half over, and billing
+//                        the pre-transfer pull made the recharge cost
+//                        multiples of the outage that caused it.
 //   rechargeReqKw      — the charger's request, folded into the pull so the
 //                        link above the UPS has to carry it
 //   upsMode            — "idle" | "charging" | "shaving" | "bridging"
@@ -274,6 +293,17 @@ export function resolvePower(dt) {
     // overwrites exactly what it re-resolves and nothing else.
     const battCredit = new Map();
     const chargerDraw = new Map();
+    // Of what each node consumed, how much came THROUGH A LIVE GRID FEED —
+    // the only kW a utility may bill. Banked per node under exactly the same
+    // rule as the credit, and for the same reason.
+    const gridDraw = new Map();
+    // Seconds each bridging UPS drained this tick. The ENERGY behind them is
+    // NOT booked here: the standby wave below may still take part of a
+    // bridged subtree onto a generator, and bufferOwedKws is "what actually
+    // left the battery", not "what the subtree pulled before the transfer
+    // switch closed". Booked in 5c, once the wave has finished moving load.
+    // Banked per node for the same reason as the two maps above.
+    const bridgeDrain = new Map();
 
     // 1) Sanitized load requests.
     const requests = new Map();
@@ -363,7 +393,7 @@ export function resolvePower(dt) {
     // may sit under another UPS, and crediting each one as it is traversed
     // bills a two-deep chain twice and lets the un-buffered half of the room
     // ride free behind demand.js's clamp.
-    function deliver(b, live, grantKw, grantBattKw = 0) {
+    function deliver(b, live, grantKw, grantBattKw = 0, grantGridKw = 0) {
         if (visited.has(b.id)) return;
         visited.add(b.id);
         // Whatever this node banked on an earlier pass is void the moment it
@@ -372,6 +402,8 @@ export function resolvePower(dt) {
         // was billed against.
         battCredit.delete(b.id);
         chargerDraw.delete(b.id);
+        gridDraw.delete(b.id);
+        bridgeDrain.delete(b.id);
         const pull = pullOf(b);
 
         if (b.config.chainRole === "load") {
@@ -380,6 +412,10 @@ export function resolvePower(dt) {
             b.powered = live && (got > 0 || pull === 0);
             // THE ONE PLACE a load banks battery credit.
             if (got > 0 && grantBattKw > 0) battCredit.set(b.id, Math.min(got, grantBattKw));
+            // ...and the one place it banks METERED draw, for the same
+            // reason: a kW is counted where it is consumed, never once per
+            // link it travelled through.
+            if (got > 0 && grantGridKw > 0) gridDraw.set(b.id, Math.min(got, grantGridKw));
             return;
         }
 
@@ -390,6 +426,22 @@ export function resolvePower(dt) {
         let outBattKw = 0;
         if (outKw > 0 && grantBattKw > 0 && Number.isFinite(grantKw) && grantKw > 0) {
             outBattKw = Math.min(outKw, grantBattKw * Math.min(1, outKw / grantKw));
+        }
+        // Metered share of what this link carries, clipped the same way. It
+        // ENTERS the model in exactly one place — a live grid feed — and a
+        // root's grant is Infinity, so a source names its own share outright
+        // instead of taking a fraction of one. That single entry point is
+        // what makes the answer right for a SCOPED outage (the dark feed
+        // contributes nothing, its healthy neighbour still does) and for a
+        // generator-fed room on a perfectly healthy grid, neither of which
+        // an `if (gridOutage.active)` special case could tell apart.
+        let outGridKw = 0;
+        if (outKw > 0) {
+            if (b.config.chainRole === "source") {
+                outGridKw = b.type === "grid_feed" ? outKw : 0;
+            } else if (grantGridKw > 0 && Number.isFinite(grantKw) && grantKw > 0) {
+                outGridKw = Math.min(outKw, grantGridKw * Math.min(1, outKw / grantKw));
+            }
         }
         // What this node draws from its PARENT. Identical to outKw for
         // everything except a charging UPS, which also draws its charger.
@@ -418,6 +470,12 @@ export function resolvePower(dt) {
                 let battOut = Math.min(served, outBattKw);
                 const spare = Math.max(0, outKw - served);
                 const battSpare = Math.max(0, outBattKw - battOut);
+                // The metered share splits in the same order: the subtree is
+                // served first and the charger lives on what is left. Battery
+                // kW are allocated to the load first, so the meter covers
+                // only what the battery did not.
+                let gridOut = Math.min(Math.max(0, served - battOut), outGridKw);
+                const gridSpare = Math.max(0, outGridKw - gridOut);
                 let chargeKw = 0;
 
                 if (STATE.peakShave.on && b.bufferLeft > 0 && served > battOut) {
@@ -438,6 +496,10 @@ export function resolvePower(dt) {
                     b.bufferLeft -= useSec;
                     b.bufferOwedKws += fromBattery * dt;
                     battOut += fromBattery;
+                    // Shaving DISPLACES metered kW — the same kW to the same
+                    // racks, bought from the battery instead of the meter —
+                    // so whatever it displaces stops being grid-sourced.
+                    gridOut = Math.max(0, gridOut - fromBattery);
                     b.upsMode = fromBattery > 0 ? "shaving" : "idle";
                 } else if ((b.rechargeReqKw || 0) > 0 && spare > 0 && b.bufferLeft < max) {
                     // RECHARGE. The charger draws what its rating and its
@@ -461,6 +523,11 @@ export function resolvePower(dt) {
                         if (battSpare > 0 && chargeKw > 0) {
                             battCredit.set(b.id, Math.min(chargeKw, battSpare * (chargeKw / spare)));
                         }
+                        // ...and so is the metered part of it. A charger
+                        // running off a generator is fuel, not a bill.
+                        if (gridSpare > 0 && chargeKw > 0) {
+                            gridDraw.set(b.id, Math.min(chargeKw, gridSpare * (chargeKw / spare)));
+                        }
                         b.upsMode = "charging";
                     } else {
                         b.upsMode = "idle";
@@ -471,6 +538,7 @@ export function resolvePower(dt) {
 
                 outKw = served;
                 outBattKw = battOut;
+                outGridKw = gridOut;
                 carriedKw = served + chargeKw;
             } else if (b.bufferLeft > 0) {
                 // The outage bridge, unchanged: seconds are spent at the
@@ -484,14 +552,23 @@ export function resolvePower(dt) {
                 if (subtreePull > 0) {
                     const drainedSec = Math.min(dt, b.bufferLeft);
                     b.bufferLeft -= drainedSec;
-                    b.bufferOwedKws += subtreePull * drainedSec;
+                    // SECONDS now, ENERGY at 5c. Booking `subtreePull *
+                    // drainedSec` here charges the battery for the whole
+                    // PRE-TRANSFER subtree, and the standby wave has not run
+                    // yet — a generator picking up half this subtree left
+                    // the UPS owing for load it never ended up carrying, and
+                    // the charger then bought that inflated figure back on
+                    // the meter.
+                    bridgeDrain.set(b.id, drainedSec);
                 }
                 outBattKw = 0; // bridged load is not peak shaving; see demand.js
+                outGridKw = 0; // ...and it is the battery, not the meter
                 carriedKw = outKw;
                 b.upsMode = "bridging";
             } else {
                 outKw = 0;
                 outBattKw = 0;
+                outGridKw = 0;
                 carriedKw = 0;
                 b.upsMode = "idle";
             }
@@ -507,6 +584,7 @@ export function resolvePower(dt) {
             outLive = false;
             outKw = 0;
             outBattKw = 0;
+            outGridKw = 0;
             carriedKw = 0;
         }
 
@@ -526,7 +604,7 @@ export function resolvePower(dt) {
         const childLive = outLive && (outKw > 0 || totalChildPull === 0);
         for (const c of kids) {
             const frac = totalChildPull > 0 ? pullOf(c) / totalChildPull : 0;
-            deliver(c, childLive, outKw * frac, outBattKw * frac);
+            deliver(c, childLive, outKw * frac, outBattKw * frac, outGridKw * frac);
         }
     }
 
@@ -578,26 +656,62 @@ export function resolvePower(dt) {
         }
         return false;
     };
+
+    // Every fueled generator's transfer candidates, gathered BEFORE any of
+    // them delivers. coveredByEarlierWave above walks a candidate's PARENTS
+    // looking for an already-redelivered node, so it can only ever see a
+    // candidate BELOW a wave that has already run. When the deeper
+    // generator's wave runs first, the shallower generator's candidate is an
+    // ANCESTOR of the redelivered set, that walk never sees it, and both
+    // generators deliver — and burn fuel for — the same racks. Which of the
+    // two happened depended on nothing but STATE.buildings order.
+    const rawCandidates = new Map();
     for (const g of STATE.buildings) {
-        if (g.type !== "generator") continue;
-        const candidates = [];
+        if (g.type !== "generator" || g.fuelLiters <= 0) continue;
+        const list = [];
         for (const b of STATE.buildings) {
-            if (b.standbyParentId === g.id && primaryPathDead(b, byId)
-                && !coveredByEarlierWave(b) && pullOf(b) > 0) {
-                candidates.push(b);
+            if (b.standbyParentId === g.id && primaryPathDead(b, byId) && pullOf(b) > 0) {
+                list.push(b);
             }
         }
-        // Intra-generator dedup: keep only the topmost of nested candidates.
-        const candidateIds = new Set(candidates.map((c) => c.id));
-        const standbys = candidates.filter((c) => {
-            let node = byId.get(c.parentId);
-            let hops = 0;
-            while (node && ++hops <= STATE.buildings.length) {
-                if (candidateIds.has(node.id)) return false;
-                node = node.parentId && node.parentId !== "grid" ? byId.get(node.parentId) : null;
-            }
-            return true;
-        });
+        if (list.length > 0) rawCandidates.set(g.id, list);
+    }
+    const candidateOwner = new Map();
+    for (const [gid, list] of rawCandidates) {
+        for (const c of list) candidateOwner.set(c.id, gid);
+    }
+    // When a generator is ready to carry, measured AFTER this tick's cutover
+    // step. Comparing post-decrement clocks is what makes the handover
+    // atomic: the shallower switch picks up on the same tick the deeper one
+    // lets go, so the racks are never carried twice and never dropped in
+    // between. A generator whose switch is still counting down cannot
+    // supersede one that is already carrying — wiring a second generator
+    // ABOVE a working one must not black the room out for a cutover.
+    const readyAt = (gid) => Math.max(0, byId.get(gid).cutoverLeft - dt);
+    // THE TOPMOST TRANSFER POINT WINS. This is the rule the wave already
+    // applied between ONE generator's nested candidates ("keep only the
+    // topmost"); applying it between generators too is what makes the answer
+    // independent of placement order. Nothing loses coverage — the shallower
+    // point's subtree strictly contains the deeper one's — and the
+    // superseded generator simply idles with its cutover clock reset,
+    // exactly as a covered candidate has always left it.
+    const supersededByShallower = (c) => {
+        const mine = readyAt(candidateOwner.get(c.id));
+        let node = c.parentId && c.parentId !== "grid" ? byId.get(c.parentId) : null;
+        let hops = 0;
+        while (node && ++hops <= STATE.buildings.length) {
+            const owner = candidateOwner.get(node.id);
+            if (owner !== undefined && readyAt(owner) <= mine) return true;
+            node = node.parentId && node.parentId !== "grid" ? byId.get(node.parentId) : null;
+        }
+        return false;
+    };
+
+    for (const g of STATE.buildings) {
+        if (g.type !== "generator") continue;
+        const standbys = (rawCandidates.get(g.id) || []).filter(
+            (c) => !supersededByShallower(c) && !coveredByEarlierWave(c)
+        );
         if (standbys.length === 0 || g.fuelLiters <= 0) {
             g.cutoverLeft = g.config.cutoverSec;
             continue;
@@ -671,17 +785,52 @@ export function resolvePower(dt) {
             }
             return false;
         };
+        // Did the wave reach anywhere inside this branch? A link BETWEEN a
+        // bridging UPS and the transfer point is left holding a pre-transfer
+        // actualKw for exactly the same reason the UPS is, so the carry has
+        // to be rebuilt from the children rather than read off any one link.
+        const waveTouched = (node) => {
+            for (const cid of node.childIds) {
+                const k = byId.get(cid);
+                if (!k) continue;
+                if (redelivered.has(k.id) || waveTouched(k)) return true;
+            }
+            return false;
+        };
+        // What a bridging UPS STILL hands down once the wave has taken part
+        // of its subtree: the branches it still feeds, at this tick's
+        // delivered numbers, plus any charger running inside them (banked
+        // per node above, and drawn from this UPS like any other load).
+        const stillOnBridgeKw = (node) => {
+            let sum = chargerDraw.get(node.id) || 0;
+            for (const cid of node.childIds) {
+                const k = byId.get(cid);
+                if (!k || redelivered.has(k.id)) continue;
+                sum += waveTouched(k) ? stillOnBridgeKw(k) : k.actualKw;
+            }
+            return sum;
+        };
         for (const c of STATE.buildings) {
             if (!c.standbyParentId || !redelivered.has(c.id)) continue;
             let node = byId.get(c.parentId);
             let hops = 0;
             while (node && ++hops <= STATE.buildings.length) {
                 if (node.type === "ups" && node.upsMode === "bridging"
-                    && !redelivered.has(node.id)
-                    && !carriesOutsideRedelivered(node)) {
-                    node.bufferLeft = bufSnap.get(node.id).sec;
-                    node.bufferOwedKws = bufSnap.get(node.id).owed;
-                    node.actualKw = 0;
+                    && !redelivered.has(node.id)) {
+                    if (!carriesOutsideRedelivered(node)) {
+                        node.bufferLeft = bufSnap.get(node.id).sec;
+                        node.bufferOwedKws = bufSnap.get(node.id).owed;
+                        node.actualKw = 0;
+                    } else {
+                        // PARTIAL transfer. The generator took some of this
+                        // bridge's subtree and left the rest, so the bridge
+                        // is still carrying and still spending SECONDS — but
+                        // only over what it actually still feeds. Leaving the
+                        // pre-transfer figure here is what billed a battery
+                        // for racks a generator was carrying, and then billed
+                        // the recharge back on the inflated number.
+                        node.actualKw = stillOnBridgeKw(node);
+                    }
                 }
                 node = node.parentId && node.parentId !== "grid" ? byId.get(node.parentId) : null;
             }
@@ -713,6 +862,22 @@ export function resolvePower(dt) {
         } else {
             b.breakerHeat = Math.max(0, b.breakerHeat - dt * brk.coolPerSec);
         }
+    }
+
+    // 5c) THE BRIDGE'S ENERGY BOOK, after the wave has finished moving load.
+    // bufferLeft counts SECONDS and the bridge spends them at the UPS's full
+    // rating however little it carries; bufferOwedKws counts the ENERGY that
+    // actually left, and that is the one the charger buys back on the meter.
+    // Two different quantities, and only the second one may follow the load —
+    // booking it against the pre-transfer subtree pull up in deliver() is how
+    // one physical discharge ended up with two numbers describing it.
+    for (const [id, drainedSec] of bridgeDrain) {
+        const b = byId.get(id);
+        // Still bridging: a UPS the wave re-delivered took the live branch on
+        // its second pass and had its buffer rolled back to the snapshot, so
+        // there is no discharge left to book.
+        if (!b || b.upsMode !== "bridging") continue;
+        b.bufferOwedKws += Math.max(0, b.actualKw) * drainedSec;
     }
 
     // 6) Fuel burn (billing scale: one game minute = one billing hour) and
@@ -749,4 +914,11 @@ export function resolvePower(dt) {
     let batterySum = 0;
     for (const kw of battCredit.values()) batterySum += kw;
     STATE.batteryKw = batterySum;
+    // What the UTILITY actually delivered, and therefore all it may bill.
+    // Summed the same way, once, over the LAST resolution of every node —
+    // a subtree the standby wave re-delivered came off the generator, and
+    // the generator is already paying for it in fuel.
+    let gridSum = 0;
+    for (const kw of gridDraw.values()) gridSum += kw;
+    STATE.gridKw = gridSum;
 }
