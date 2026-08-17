@@ -7,7 +7,7 @@ import { STATE } from "../core/state.js";
 import { placeBuilding as simPlace, connect as simConnect, demolishBuilding as simDemolish } from "../sim/build.js";
 import { repairCrac, orderFuel, resetBreaker } from "../sim/crisis.js";
 import { pendingOrderFor, openServiceWindow } from "../sim/maintenance.js";
-import { camera, cameraTarget, renderer, worldToGrid, gridToWorld, buildingGroup, focusWorld } from "../ui/scene.js";
+import { camera, cameraTarget, renderer, worldToGrid, buildingGroup, focusWorld } from "../ui/scene.js";
 import { attachMesh, addWireMesh, removeWireMesh, removeMesh } from "../ui/meshes.js";
 import { markActiveTool, refreshAffordability } from "../ui/toolbar.js";
 import { renderInspect, showBanner } from "../ui/hud.js";
