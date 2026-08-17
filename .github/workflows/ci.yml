@@ -29,12 +29,6 @@ jobs:
       # from CDNs, there is no build step), so the lockfile only pins a
       # linter and a test runner. Reproducibility of the shipped artifact does
       # not pass through here at all.
-      #
-      # PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: nothing in `check` drives a browser
-      # — the demo recorder uses system Chrome — and the download is hundreds
-      # of MB per run.
       - run: npm install --no-audit --no-fund
-        env:
-          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
       - run: npm run lint
       - run: npm test
