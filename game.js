@@ -17,7 +17,7 @@ import { tickOverlay, toggleThermalOverlay } from "./src/ui/overlay.js";
 import { tickPulses } from "./src/ui/pulses.js";
 import { tickBadges, clearBadges } from "./src/ui/failure-badges.js";
 import { renderPalette, refreshAffordability } from "./src/ui/toolbar.js";
-import { setTool, tickInspect, tickCameraPan } from "./src/input/handlers.js";
+import { setTool, tickInspect, tickCameraPan, clearSelection } from "./src/input/handlers.js";
 import { tutorial, showCeremony, shouldOfferTutorial, tickTutorial, notifyOverlayToggled, abandonTutorial } from "./src/ui/tutorial.js";
 import { openFaq, closeFaq } from "./src/ui/faq.js";
 import { tickCampaign, startLevelState, startLevelMaintenance } from "./src/campaign/campaign.js";
@@ -231,6 +231,7 @@ function clearWorld() {
     resetHudStats();
     clearBadges();
     renderInspect(null);
+    clearSelection();
     // The knob panel is rebuilt per level start, so a Lab run cannot leave
     // its listeners (or its readings) behind in the next room.
     resetLabPanel();
@@ -337,6 +338,11 @@ window.startGame = (seed) => {
 };
 window.startTutorialGame = () => {
     beginRun();
+    // The same free-play run as startGame, so it gets the same meter. Without
+    // this the Tutorial entry point — the one a FIRST-TIME player takes —
+    // silently played a flat-rate game while everyone who pressed Power On
+    // got the day/night cycle.
+    STATE.tariff.cycleOn = true;
     showCeremony();
 };
 window.restartGame = () => {
