@@ -149,6 +149,7 @@ export const EN_TRANSLATIONS = {
     "faq_events_6": "Grid OUTAGES kill the city feed completely for a stretch — unlike a brownout, the chain below is DEAD. UPS buffers bridge seconds; a standby generator with fuel in the tank carries the rest. Batteries bridge, generators carry, fuel is the real capacity of your backup.",
     "faq_controls_1": "Left click: use the active tool. Right/middle drag: pan. Wheel: zoom. T: thermal overlay. Esc: back to select.",
     "faq_controls_2": "Wire tool: click the power SOURCE first, then the building to feed.",
+    "faq_controls_3": "WASD or the arrow keys: pan the camera. Speed holds steady at any zoom.",
 
     "menu_campaign": "Campaign",
     "campaign_title": "Campaign",

@@ -159,7 +159,8 @@ function tabContent() {
             <p class="text-cyan-300">${i18n.t("faq_loss_3")}</p>`;
         case "controls": return `
             <p>${i18n.t("faq_controls_1")}</p>
-            <p>${i18n.t("faq_controls_2")}</p>`;
+            <p>${i18n.t("faq_controls_2")}</p>
+            <p>${i18n.t("faq_controls_3")}</p>`;
         default: return "";
     }
 }
