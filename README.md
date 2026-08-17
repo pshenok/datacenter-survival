@@ -32,7 +32,8 @@ totals it in dollars.*
   beats cooling everywhere at once; below it, the plant's pumps cost more
   than they save. That is why your **PUE** (total facility power ÷ IT power)
   is both your score and your power bill. Press **T** for the thermal overlay
-  and watch hot aisles form from your own layout.
+  and watch hot aisles form from your own layout. Drag (right/middle mouse)
+  or use **WASD** / the arrow keys to pan the camera around the floor.
 - **The plant drinks.** A chiller's cooling tower rejects heat by evaporating
   water — around 1.8 litres per kWh, which is what the industry calls **WUE**
   and what the HUD shows beside PUE. It is cheap enough that the loop still
@@ -134,7 +135,7 @@ real playthrough.
 ## Status
 
 Thirteen campaign levels across five chapters plus The Lab, nine buildings,
-519 tests. Simulation: wired power with inverse-time breakers, a diffusing
+531 tests. Simulation: wired power with inverse-time breakers, a diffusing
 heat field with part-load cooling, a shared chilled-water loop metered for
 water on a WUE, UPS buffers, standby generators with fuel, grid sags,
 per-substation outages, time-of-use and peak tariffs, droughts, peak shaving

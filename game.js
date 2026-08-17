@@ -17,7 +17,7 @@ import { tickOverlay, toggleThermalOverlay } from "./src/ui/overlay.js";
 import { tickPulses } from "./src/ui/pulses.js";
 import { tickBadges, clearBadges } from "./src/ui/failure-badges.js";
 import { renderPalette, refreshAffordability } from "./src/ui/toolbar.js";
-import { setTool, tickInspect } from "./src/input/handlers.js";
+import { setTool, tickInspect, tickCameraPan } from "./src/input/handlers.js";
 import { tutorial, showCeremony, shouldOfferTutorial, tickTutorial, notifyOverlayToggled } from "./src/ui/tutorial.js";
 import { openFaq, closeFaq } from "./src/ui/faq.js";
 import { tickCampaign, startLevelState, startLevelMaintenance } from "./src/campaign/campaign.js";
@@ -212,6 +212,7 @@ function animate(time) {
     tickOverlay(rawDt);
     tickHud();
     tickInspect();
+    tickCameraPan(rawDt);
     renderer.render(scene, camera);
 }
 
