@@ -16,7 +16,7 @@ import {
     initMaintenance, tickMaintenance, openServiceWindow,
     pendingOrderFor, activeOrderCount,
 } from "../src/sim/maintenance.js";
-import { tickCampaign, startLevelState, levelCfg } from "../src/campaign/campaign.js";
+import { tickCampaign } from "../src/campaign/campaign.js";
 import { demolishBuilding } from "../src/sim/build.js";
 
 const DT = 0.05;
