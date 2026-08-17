@@ -22,6 +22,7 @@ import { tutorial, showCeremony, shouldOfferTutorial, tickTutorial, notifyOverla
 import { openFaq, closeFaq } from "./src/ui/faq.js";
 import { tickCampaign, startLevelState, startLevelMaintenance } from "./src/campaign/campaign.js";
 import { tickMaintenance } from "./src/sim/maintenance.js";
+import { resetWireIds } from "./src/sim/build.js";
 import { applyPreBuilt } from "./src/campaign/prebuilt.js";
 import { initCampaignUi, openCampaign, closeCampaign, openBriefing, closeBriefing, onLevelStart, tickCampaignUi } from "./src/ui/campaign-ui.js";
 import { initLabPanel, tickLabPanel, hideLabPanel, resetLabPanel } from "./src/ui/lab-panel.js";
@@ -218,7 +219,11 @@ function clearWorld() {
     for (const w of STATE.wires) removeWireMesh(w);
     for (const b of STATE.buildings) removeMesh(b);
     resetState();
+    // The three id counters travel together. resetState() cannot see any of
+    // them — they are module-scope in their own files — so a missing one
+    // leaves ids climbing across runs while its siblings restart at 1.
     resetBuildingIds();
+    resetWireIds();
     resetHudStats();
     clearBadges();
     renderInspect(null);
