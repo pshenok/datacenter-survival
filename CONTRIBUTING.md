@@ -48,7 +48,7 @@ npm i
 npm run check     # eslint . && vitest run — exactly what CI runs
 ```
 
-Baseline today: lint clean, 30 test files, 535 tests, about 3 s. CI uses
+Baseline today: lint clean, 33 test files, 558 tests, about 3 s. CI uses
 Node 22. Nothing here downloads a browser: the demo recorder drives your
 system Chrome through `playwright-core`, which ships no binaries.
 
@@ -103,7 +103,7 @@ Never call `Math.random` in a sim module. Schedules use two sentinel values:
 "can never fire" (how a campaign level guarantees a deterministic script).
 
 **`resetState()` is hand-maintained.** Add a field to the `STATE` literal and
-forget `resetState()` and all 535 tests still pass — the field is silently
+forget `resetState()` and all 558 tests still pass — the field is silently
 deleted on the first reset. Call `resetBuildingIds()` alongside every
 `resetState()`, and `resetWireIds()` too if you use `src/sim/build.js`.
 
