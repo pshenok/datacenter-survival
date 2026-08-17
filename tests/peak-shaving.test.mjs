@@ -1006,6 +1006,80 @@ describe("measured in-game: one full discharge at day x peak, recharged at night
 // re-delivered subtree's buffers back to the snapshot and kept the credit
 // anyway. Each was found by a person reading the code, one at a time, after
 // it had already shipped. This is that reading, done every tick.
+// THE OTHER DIRECTION. Every clause of the ledger invariant below reads
+// `x > y`: they catch a meter or a booking that charges TOO MUCH, which is
+// unfair, and say nothing about one that charges too little — which is free
+// energy, and worse. These pin the floor for the topologies a player actually
+// builds: with no generator and no battery discharging, the utility delivered
+// every kW the facility drew, so gridKw and totalDrawKw are the same number.
+//
+// (The chaotic run below cannot carry this clause yet: a bridge that runs its
+// buffer to zero hands out one final tick it no longer has — carried 6 kW,
+// booked 0 — which shows up here as an under-bill. That is a real defect, it
+// predates gridKw, and it is written up rather than papered over with a
+// tolerance wide enough to hide it.)
+describe("the meter's floor: kW nobody paid for is free energy", () => {
+    it("a plain grid-fed room bills every kW it drew", () => {
+        const feed = place("grid_feed", 2, 5);
+        const t = place("transformer", 5, 5);
+        const pdu = place("pdu", 8, 5);
+        wireBuildings(feed, t); wireBuildings(t, pdu);
+        for (let i = 0; i < 3; i++) {
+            const r = place("rack", 11 + i, 5);
+            wireBuildings(pdu, r);
+            r.assignedKw = CONFIG.buildings.rack.capacityKw;
+        }
+        for (let k = 0; k < 40; k++) resolvePower(DT);
+        expect(STATE.totalDrawKw).toBeGreaterThan(0);
+        expect(STATE.batteryKw).toBe(0);
+        expect(STATE.gridKw).toBeCloseTo(STATE.totalDrawKw, 9);
+    });
+
+    it("a UPS in the chain with shaving OFF bills the racks AND its charger", () => {
+        const feed = place("grid_feed", 2, 5);
+        const t = place("transformer", 5, 5);
+        const ups = place("ups", 8, 5);
+        const pdu = place("pdu", 11, 5);
+        wireBuildings(feed, t); wireBuildings(t, ups); wireBuildings(ups, pdu);
+        for (let i = 0; i < 3; i++) {
+            const r = place("rack", 14 + i, 5);
+            wireBuildings(pdu, r);
+            r.assignedKw = CONFIG.buildings.rack.capacityKw;
+        }
+        for (let k = 0; k < 40; k++) resolvePower(DT);
+        expect(STATE.totalDrawKw).toBeGreaterThan(0);
+        expect(STATE.gridKw).toBeCloseTo(STATE.totalDrawKw, 9);
+    });
+
+    it("a generator branch beside a grid branch: each kW billed to its own source", () => {
+        const feed = place("grid_feed", 2, 5);
+        const t = place("transformer", 5, 5);
+        const pduA = place("pdu", 8, 5);
+        wireBuildings(feed, t); wireBuildings(t, pduA);
+        for (let i = 0; i < 2; i++) {
+            const r = place("rack", 11 + i, 5);
+            wireBuildings(pduA, r);
+            r.assignedKw = CONFIG.buildings.rack.capacityKw;
+        }
+        const gen = place("generator", 2, 15);
+        const pduB = place("pdu", 8, 15);
+        wireBuildings(gen, pduB);
+        for (let i = 0; i < 2; i++) {
+            const r = place("rack", 11 + i, 15);
+            wireBuildings(pduB, r);
+            r.assignedKw = CONFIG.buildings.rack.capacityKw;
+        }
+        for (let k = 0; k < 60; k++) resolvePower(DT);
+        const gens = STATE.buildings
+            .filter((b) => b.type === "generator")
+            .reduce((s, b) => s + Math.max(0, b.actualKw), 0);
+        expect(gens).toBeGreaterThan(0);
+        // Nothing drawn off-meter, and nothing billed that diesel produced.
+        expect(STATE.gridKw + gens).toBeCloseTo(STATE.totalDrawKw, 9);
+        expect(STATE.gridKw).toBeCloseTo(STATE.totalDrawKw - gens, 9);
+    });
+});
+
 describe("THE LEDGER: a credited kW.s came out of a battery, or it did not happen", () => {
     // Every UPS keeps two independent books on the same physical event: the
     // CHARGE it gave up (bufferLeft, denominated in seconds of capacityKw)

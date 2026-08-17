@@ -135,7 +135,7 @@ real playthrough.
 ## Status
 
 Thirteen campaign levels across five chapters plus The Lab, nine buildings,
-567 tests. Simulation: wired power with inverse-time breakers, a diffusing
+570 tests. Simulation: wired power with inverse-time breakers, a diffusing
 heat field with part-load cooling, a shared chilled-water loop metered for
 water on a WUE, UPS buffers, standby generators with fuel, grid sags,
 per-substation outages, time-of-use and peak tariffs, droughts, peak shaving

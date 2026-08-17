@@ -25,7 +25,7 @@ elapsedGameTime += dt          (skipped while the tutorial is active)
 ```
 
 The order encodes causality. Nothing asserts it: the loop is hand-copied into
-17 test files, 47 copies in all, so reordering `game.js` leaves the whole
+17 test files, 50 copies in all, so reordering `game.js` leaves the whole
 suite green while the shipped game behaves differently. Those two numbers are
 themselves pinned by `tests/docs-counts.test.mjs` — they drifted four times
 before anyone noticed, which is the same argument this file makes for
