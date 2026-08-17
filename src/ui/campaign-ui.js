@@ -126,9 +126,22 @@ export function onLevelStart(id) {
     showBanner(i18n.t("lv_" + id + "_brief"), 7000);
 }
 
+// A serve_kwh_during_event objective is gated on ONE event —
+// campaign/campaign.js reads o.event and counts only while THAT window is
+// live — so the label has to name the same one. Printing "while the grid is
+// down" over a brownout objective is the sag level teaching against itself:
+// its whole lesson is that a sag is degraded-not-dead and the grid is still
+// up. The fallback matches evaluateObjective's own: anything not brownout or
+// heatwave is the grid outage.
+function serveDuringKey(o) {
+    if (o.event === "brownout") return "obj_serve_sag";
+    if (o.event === "heatwave") return "obj_serve_heat";
+    return "obj_serve_during";
+}
+
 function objectiveLabel(o) {
     if (o.type === "serve_kwh") return i18n.t("obj_serve_kwh", { target: o.target });
-    if (o.type === "serve_kwh_during_event") return i18n.t("obj_serve_during", { target: o.target });
+    if (o.type === "serve_kwh_during_event") return i18n.t(serveDuringKey(o), { target: o.target });
     if (o.type === "pue_below") return i18n.t("obj_pue_below", { value: o.value, hold: o.holdSec });
     if (o.type === "money_at_least") return i18n.t("obj_money_left", { target: o.target });
     if (o.type === "maintenance_without_loss") {
@@ -150,7 +163,7 @@ function objectiveRow(o) {
         label = i18n.t("obj_serve_kwh", { target: o.target });
         progress = `${Math.min(o.progress, o.target).toFixed(1)} / ${o.target}`;
     } else if (o.type === "serve_kwh_during_event") {
-        label = i18n.t("obj_serve_during", { target: o.target });
+        label = i18n.t(serveDuringKey(o), { target: o.target });
         progress = `${Math.min(o.progress, o.target).toFixed(1)} / ${o.target}`;
     } else if (o.type === "pue_below") {
         label = i18n.t("obj_pue_below", { value: o.value, hold: o.holdSec });

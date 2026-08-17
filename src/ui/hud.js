@@ -295,6 +295,16 @@ export function renderInspect(b) {
         rows.push(row(i18n.t("insp_draw"), `${b.actualKw.toFixed(1)} kW`));
         rows.push(row(i18n.t("insp_duty"), `${Math.round(b.duty * 100)}%`));
     } else if (b.type === "chiller") {
+        // A dead plant zeroes its own duty (sim/heat.js), which zeroes the
+        // loop's capacity and its ratio — so WITHOUT this row the panel falls
+        // through to "LOOP OVER-COMMITTED" and tells the player to buy fewer
+        // heads when the truth is that the plant is gone. There is no repair
+        // to offer: chiller_fail (campaign/campaign.js) sets repairAt to
+        // Infinity and repairCrac refuses anything that is not a CRAC. The
+        // permanence IS the lesson, so the row states it and promises nothing.
+        if (b.broken) {
+            rows.push(`<div class="text-red-400 font-bold mb-1">${i18n.t("insp_plant_dead")}</div>`);
+        }
         rows.push(row(i18n.t("insp_draw"), `${b.actualKw.toFixed(1)} kW`));
         // The BILLED litres, written by sim/heat.js — the same rule the draw
         // row follows. A tower that is not rejecting heat is not evaporating,
@@ -303,7 +313,7 @@ export function renderInspect(b) {
         rows.push(row(i18n.t("insp_water"), `${b.waterLitersPerHour.toFixed(1)} L/hr`));
         rows.push(row(i18n.t("insp_loop"),
             `${Math.round(STATE.coolingLoop.demandUnits)} / ${Math.round(STATE.coolingLoop.capacityUnits)}`));
-        if (STATE.coolingLoop.ratio < 0.999) {
+        if (!b.broken && STATE.coolingLoop.ratio < 0.999) {
             rows.push(`<div class="text-amber-300 text-[11px] mt-1">${i18n.t("insp_loop_starved")}</div>`);
         }
     } else if (b.type === "crah") {
@@ -338,7 +348,12 @@ export function renderInspect(b) {
             rows.push(`<div class="text-gray-500 text-[11px] mb-1">${i18n.t("insp_fuel_hint", { cost: b.config.fuelCost })}</div>`);
         }
     } else {
-        rows.push(row(i18n.t("insp_draw"), `cap ${b.config.capacityKw} kW`));
+        // Links and sources CARRY, they do not draw (sim/power.js writes
+        // actualKw as the kW crossing this node) — so the row is the carried
+        // kW against the rating, the rack's shape. A bare nameplate never
+        // moves, which left a player watching a bus approach its breaker with
+        // nothing on screen that ever changed.
+        rows.push(row(i18n.t("insp_carried"), `${b.actualKw.toFixed(1)} / ${b.config.capacityKw} kW`));
     }
     // Which substation a feed hangs off is derived from WHERE it stands, so
     // it has to be legible somewhere — otherwise a one-tile-wrong fix looks
