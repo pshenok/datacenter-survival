@@ -142,6 +142,14 @@ function handlePrimary(e) {
     renderInspect(hit.building || null);
 }
 
+// clearWorld() hides the panel and restarts building ids at b1, but the
+// module-scope selection outlived both: the next run's b1 is a different
+// building, and the inspector re-opened on it a frame later without anyone
+// clicking anything.
+export function clearSelection() {
+    selectedId = null;
+}
+
 export function tickInspect() {
     if (!selectedId) return;
     const b = STATE.buildings.find((x) => x.id === selectedId);

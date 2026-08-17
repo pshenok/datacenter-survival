@@ -684,6 +684,15 @@ export const CONFIG = {
             // failure from cooking. The fix is not more cooling, it is
             // cooling that does not all fail together.
             single_point_of_cold: {
+                // The plant's failure is PERMANENT by design (chiller_fail sets
+                // repairAt = Infinity), because the lesson is that a second
+                // failure mode beats a second identical unit. Demolishing the
+                // dead plant refunds half its $260 and turns $200 into $330 —
+                // enough to buy an identical replacement and route straight
+                // around the lesson. preBuilt places with { free: true } and so
+                // bypasses this list, which is exactly why banning the type
+                // still leaves the level's own plant standing.
+                banned: ["chiller"],
                 startMoney: 200,
                 timeLimitSec: 200,
                 demandKw: 24,

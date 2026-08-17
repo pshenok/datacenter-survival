@@ -468,3 +468,27 @@ describe("L13 night_shift — Tier III is about being serviceable", () => {
         expect(STATE.maintenance.orders.every((o) => o.state === "done")).toBe(true);
     });
 });
+
+describe("single_point_of_cold — the plant does not come back", () => {
+    it("THE EXPLOIT: the dead plant's refund used to fund an identical replacement", () => {
+        const made = start("single_point_of_cold");
+        const plant = made.find((b) => b.type === "chiller");
+        // Before the ban this was the whole cheese: $200 cannot buy a $260
+        // plant, but demolishing the dead one refunds half of it and $330 can.
+        const before = STATE.money;
+        demolishBuilding(plant);
+        expect(STATE.money).toBeGreaterThan(CONFIG.buildings.chiller.cost);
+        expect(STATE.money).toBeGreaterThan(before);
+
+        // Affordable, and still refused — because rebuilding the same single
+        // point is the one fix this level exists to rule out.
+        expect(placeBuilding("chiller", 20, 14)).toBe("banned");
+        expect(of("chiller").length).toBe(0);
+    });
+
+    it("the level HANDS you a plant even though the type is banned — preBuilt is free-placed", () => {
+        const made = start("single_point_of_cold");
+        expect(CONFIG.campaign.levels.single_point_of_cold.banned).toContain("chiller");
+        expect(made.filter((b) => b.type === "chiller").length).toBe(1);
+    });
+});
