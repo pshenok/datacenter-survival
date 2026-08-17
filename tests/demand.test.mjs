@@ -201,7 +201,8 @@ describe("economy", () => {
         const pdu = makeFeedAndPdu();
         addRack(pdu, 2).actualKw = 6;
         addRack(pdu, 3).actualKw = 6;
-        STATE.totalDrawKw = 5;              // last tick's facility bill basis
+        STATE.totalDrawKw = 5;              // last tick's facility draw
+        STATE.gridKw = 5;                   // ...all of it off the feed, so all billable
         tickDemand(60, 0);                  // one game minute = one billing hour
         // revenue 4 kW * $3/kWh - cost 5 kW * $0.9/kWh, no SLA miss
         expect(STATE.money).toBeCloseTo(CONFIG.economy.startMoney + 12 - 4.5, 6);
@@ -210,6 +211,7 @@ describe("economy", () => {
 
     it("bleeds money on idle draw: power bill plus SLA penalty", () => {
         STATE.totalDrawKw = 3;              // a CRAC idling, nothing served
+        STATE.gridKw = 3;                   // idling ON THE UTILITY, so the meter runs
         tickDemand(6, 0);                   // demand 4, served 0
         const expected = CONFIG.economy.startMoney
             - 3 * CONFIG.economy.powerCostPerKwh * 6 / 60

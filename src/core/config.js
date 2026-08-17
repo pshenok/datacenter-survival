@@ -236,7 +236,12 @@ export const CONFIG = {
     // ---- Economy ------------------------------------------------------
     economy: {
         startMoney: 800,
-        powerCostPerKwh: 0.9,    // paid on TOTAL facility draw — PUE in the wallet
+        // Paid on the facility draw that actually came off a UTILITY FEED
+        // (STATE.gridKw) — PUE in the wallet, because every inefficiency
+        // upstream of a rack is drawn through the same meter. What a
+        // generator or a battery carried is not on this line: those are paid
+        // for in fuel and in the recharge respectively.
+        powerCostPerKwh: 0.9,
         bankruptcyAt: -500,
         slaPenaltyPerKwhMissed: 1.5,
         // ---- The water meter, a SECOND utility ------------------------

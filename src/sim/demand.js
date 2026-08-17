@@ -255,13 +255,24 @@ export function tickDemand(dt, elapsed) {
     STATE.tariff.band = STATE.tariff.cycleOn ? band.key : null;
     const tariffMul = (STATE.tariff.active ? STATE.tariff.multiplier : 1) * STATE.tariff.cycleMul;
     STATE.money += STATE.servedKw * CONFIG.buildings.rack.revenuePerKwhServed * billingHours;
-    // PEAK SHAVING (sim/power.js, STATE.peakShave): kW served from a UPS
-    // buffer this tick already left the grid — battery-sourced draw does
-    // not hit the meter, which is the entire point of the mechanic.
-    // totalDrawKw itself is untouched (still every watt the facility drew,
-    // whatever it came from — PUE's numerator stays honest); only the BILL
-    // subtracts it, here and nowhere else.
-    const billedDrawKw = Math.max(0, STATE.totalDrawKw - STATE.batteryKw);
+    // THE UTILITY BILLS WHAT THE UTILITY DELIVERED. STATE.gridKw is the part
+    // of the facility's draw that actually came through a live grid feed
+    // this tick (sim/power.js walks the chain and knows each node's root);
+    // everything else came out of a generator or a battery. Those two are
+    // not free — the generator pays in fuel, the battery in the recharge the
+    // charger buys back on this same meter — so billing them here as well
+    // charged the player twice for energy no utility ever delivered.
+    //
+    // This is also what makes peak shaving pay: shaved kW are displaced out
+    // of gridKw at the UPS, so the credit needs no separate subtraction.
+    // totalDrawKw is untouched (still every watt the facility drew, whatever
+    // it came from — PUE's numerator stays honest); only the BILL narrows.
+    //
+    // Deliberately NOT keyed off STATE.gridOutage.active: a scoped outage
+    // leaves half the room on a live substation, and a room running on a
+    // generator with the grid perfectly healthy is the same question. Only
+    // the topology answers both, and power.js is where the topology lives.
+    const billedDrawKw = Math.max(0, STATE.gridKw);
     STATE.money -= billedDrawKw * eco.powerCostPerKwh * tariffMul * billingHours;
     // WATER — a SECOND utility, on the same meter path and the same billing
     // scale. STATE.water.litersPerHour is written by sim/heat.js, which runs
