@@ -145,6 +145,26 @@ export function skipTutorial() {
     finish(false);
 }
 
+// Abandoning a run mid-lesson — Esc, the pause menu, back to the main menu.
+//
+// This is NOT skipTutorial(). Skip is a decision ("I know this"), so it marks
+// the tutorial done and never offers again; walking out to the menu is not,
+// so the offer survives. What the two share, and the only part that is not
+// cosmetic, is clearing `active`: game.js gates the whole game clock on it
+// (`if (!tutorial.active) STATE.elapsedGameTime += dt`), and nothing else
+// ever clears it. Left latched, every run started afterwards has a frozen
+// clock — no demand waves, no heatwave, no crisis, no contract, no campaign
+// timer and no maintenance deadline — until the page is reloaded.
+export function abandonTutorial() {
+    if (!tutorial.active) return false;
+    tutorial.active = false;
+    for (const id of ["tut-spotlight", "tut-callout", "tut-checklist"]) {
+        const el = document.getElementById(id);
+        if (el) el.classList.add("hidden");
+    }
+    return true;
+}
+
 function finish(celebrated) {
     tutorial.active = false;
     try {

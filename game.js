@@ -18,7 +18,7 @@ import { tickPulses } from "./src/ui/pulses.js";
 import { tickBadges, clearBadges } from "./src/ui/failure-badges.js";
 import { renderPalette, refreshAffordability } from "./src/ui/toolbar.js";
 import { setTool, tickInspect, tickCameraPan } from "./src/input/handlers.js";
-import { tutorial, showCeremony, shouldOfferTutorial, tickTutorial, notifyOverlayToggled } from "./src/ui/tutorial.js";
+import { tutorial, showCeremony, shouldOfferTutorial, tickTutorial, notifyOverlayToggled, abandonTutorial } from "./src/ui/tutorial.js";
 import { openFaq, closeFaq } from "./src/ui/faq.js";
 import { tickCampaign, startLevelState, startLevelMaintenance } from "./src/campaign/campaign.js";
 import { tickMaintenance } from "./src/sim/maintenance.js";
@@ -217,6 +217,9 @@ function animate(time) {
 }
 
 function clearWorld() {
+    // A tutorial the player walked out of stays `active` otherwise, and the
+    // game clock is gated on that flag — see abandonTutorial().
+    abandonTutorial();
     for (const w of STATE.wires) removeWireMesh(w);
     for (const b of STATE.buildings) removeMesh(b);
     resetState();
@@ -421,6 +424,7 @@ window.briefingBack = () => {
 };
 window.backToMenu = () => {
     STATE.isRunning = false;
+    abandonTutorial();
     for (const id of ["gameover-modal", "objectives-panel", "lab-panel", "pause-menu-modal", "briefing-modal", "level-result-modal"]) {
         document.getElementById(id).classList.add("hidden");
     }
