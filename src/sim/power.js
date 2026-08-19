@@ -548,9 +548,10 @@ export function resolvePower(dt) {
                 // The ENERGY it really handed over is what the charger will
                 // have to buy back, so that is what gets recorded.
                 outLive = true;
-                outKw = subtreePull; // self-grant: serve the subtree from the buffer
+                // SECONDS first, because the grant now depends on how many of
+                // this tick's seconds the buffer can actually cover.
+                const drainedSec = Math.min(dt, b.bufferLeft);
                 if (subtreePull > 0) {
-                    const drainedSec = Math.min(dt, b.bufferLeft);
                     b.bufferLeft -= drainedSec;
                     // SECONDS now, ENERGY at 5c. Booking `subtreePull *
                     // drainedSec` here charges the battery for the whole
@@ -561,6 +562,21 @@ export function resolvePower(dt) {
                     // the meter.
                     bridgeDrain.set(b.id, drainedSec);
                 }
+                // A buffer with 4 ms left in it cannot power a 50 ms tick.
+                // The branch above is entered on `bufferLeft > 0` however
+                // little is left, and used to grant the whole subtree pull
+                // for the whole tick regardless — so the last tick of every
+                // bridge handed the room a full tick of power on a sliver of
+                // battery, and the difference was energy no source produced.
+                //
+                // On every full tick drainedSec === dt and this is exactly
+                // subtreePull, byte for byte. Only the tick that empties the
+                // buffer is scaled, and it is scaled to the tick-AVERAGE
+                // rate, so the energy delivered across the tick (outKw * dt)
+                // is exactly subtreePull * drainedSec: the energy that really
+                // left. Peak shaving has capped its grant by the charge left
+                // since the day it was written; the bridge never did.
+                outKw = subtreePull * (drainedSec / dt);
                 outBattKw = 0; // bridged load is not peak shaving; see demand.js
                 outGridKw = 0; // ...and it is the battery, not the meter
                 carriedKw = outKw;
@@ -871,13 +887,19 @@ export function resolvePower(dt) {
     // Two different quantities, and only the second one may follow the load —
     // booking it against the pre-transfer subtree pull up in deliver() is how
     // one physical discharge ended up with two numbers describing it.
-    for (const [id, drainedSec] of bridgeDrain) {
+    for (const id of bridgeDrain.keys()) {
         const b = byId.get(id);
         // Still bridging: a UPS the wave re-delivered took the live branch on
         // its second pass and had its buffer rolled back to the snapshot, so
         // there is no discharge left to book.
         if (!b || b.upsMode !== "bridging") continue;
-        b.bufferOwedKws += Math.max(0, b.actualKw) * drainedSec;
+        // dt, not the drained seconds: actualKw is the tick-AVERAGE rate now
+        // that the grant is capped by the charge left, so rate * dt is the
+        // energy. On a full tick the two forms are identical (drainedSec ===
+        // dt); on the tick that empties the buffer, multiplying the already
+        // scaled rate by the sliver again would book the sliver twice and
+        // under-charge the charger for a discharge that did happen.
+        b.bufferOwedKws += Math.max(0, b.actualKw) * dt;
     }
 
     // 6) Fuel burn (billing scale: one game minute = one billing hour) and

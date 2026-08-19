@@ -1579,6 +1579,7 @@ describe("THE LEDGER: a credited kW.s came out of a battery, or it did not happe
         let brokeFuel = null;
         let brokeBridge = null;
         let brokeMeter = null;
+        const owedBefore = new Map();
 
         for (let i = 0; i < Math.round(200 / DT); i++) {
             STATE.elapsedGameTime += DT;
@@ -1664,7 +1665,7 @@ describe("THE LEDGER: a credited kW.s came out of a battery, or it did not happe
             // the generator already paid in fuel and the battery pays in the
             // recharge, so billing them too is charging twice for energy no
             // utility delivered.
-            const { feeds } = rootOutput();
+            const { feeds, gens } = rootOutput();
             const anyFeedLive = STATE.buildings.some(
                 (b) => b.type === "grid_feed" && !feedIsDark(b)
             );
@@ -1676,6 +1677,40 @@ describe("THE LEDGER: a credited kW.s came out of a battery, or it did not happe
             }
             if (STATE.gridKw > STATE.totalDrawKw + 1e-9 && brokeMeter === null) {
                 brokeMeter = { atSec: +t.toFixed(2), why: "billed more than the facility drew", gridKw: STATE.gridKw, totalDrawKw: STATE.totalDrawKw };
+            }
+            // ...AND THE FLOOR, which is the dangerous side. The three
+            // clauses above all read `gridKw > x`: they catch a meter that
+            // charges too much, which is unfair, and say nothing about one
+            // that charges too little — which is FREE ENERGY, and worse.
+            //
+            // Every kW the facility drew came off a feed, out of a generator,
+            // or out of a battery, and the battery leaves through exactly two
+            // doors: peak shaving (STATE.batteryKw) and the outage bridge,
+            // which batteryKw deliberately does not count. bufferOwedKws is
+            // the bridge's own meter of what left, so the residual is closed
+            // with that measurement rather than a second guess at it. Only
+            // the RISING side per buffer: owed falls when the charger buys
+            // the energy back, and that recharge is already in totalDrawKw as
+            // charger draw and already billed.
+            //
+            // This clause could not be written until the bridge stopped
+            // handing out a final tick it did not have — it fired on the
+            // exhaustion tick, which is exactly what it is for.
+            let bridgeKw = 0;
+            for (const b of STATE.buildings) {
+                if (!("bufferOwedKws" in b)) continue;
+                const prev = owedBefore.get(b.id) || 0;
+                const now = b.bufferOwedKws || 0;
+                if (now > prev) bridgeKw += (now - prev) / DT;
+                owedBefore.set(b.id, now);
+            }
+            const offMeter = STATE.totalDrawKw - STATE.batteryKw - gens - bridgeKw;
+            if (STATE.gridKw < offMeter - 1e-6 && brokeMeter === null) {
+                brokeMeter = {
+                    atSec: +t.toFixed(2), why: "drew kW that nothing paid for",
+                    gridKw: STATE.gridKw, owed: offMeter, bridgeKw,
+                    totalDrawKw: STATE.totalDrawKw, batteryKw: STATE.batteryKw, gens,
+                };
             }
             seen.billedKw += STATE.gridKw;
             seen.feedKw += feeds;
@@ -1783,5 +1818,78 @@ describe("THE LEDGER: a credited kW.s came out of a battery, or it did not happe
         expect(meteredTicks).toBeGreaterThan(1000);
         expect(freeTicks).toBeGreaterThan(100);
         expect(chargedKws).toBeGreaterThan(0);
+    });
+});
+
+describe("a bridge cannot hand out energy it does not have", () => {
+    // bufferLeft counts SECONDS at the UPS's full rating — that is the
+    // ride-through model every campaign level is proven against and it is
+    // deliberately untouched here. What was wrong is the kW handed DOWN on
+    // the tick that empties the buffer: the branch is entered on
+    // `bufferLeft > 0`, however little is left, and then grants the whole
+    // subtree pull for the whole tick. A buffer with 4 ms left powered a
+    // 50 ms tick, and the difference is energy no source produced.
+    it("THE LAST TICK: what it carries matches what left the battery, every tick", () => {
+        const { ups, pdu } = chain();
+        const racks = [];
+        for (let i = 0; i < 1; i++) {
+            const r = place("rack", 14 + i, 5);
+            wireBuildings(pdu, r);
+            r.assignedKw = CONFIG.buildings.rack.capacityKw;
+            racks.push(r);
+        }
+        STATE.demandFixedKw = racks.length * CONFIG.buildings.rack.capacityKw;
+        for (let k = 0; k < 40; k++) resolvePower(DT);          // charge up
+        expect(ups.bufferLeft).toBeGreaterThan(0);
+
+        STATE.gridOutage = { active: true, endsAt: 1e9, nextAt: Infinity, scope: "all" };
+
+        let worst = null;
+        let bridgingTicks = 0;
+        let prevOwed = ups.bufferOwedKws || 0;
+        for (let k = 0; k < 4000; k++) {
+            resolvePower(DT);
+            const owed = ups.bufferOwedKws || 0;
+            const bookedKw = (owed - prevOwed) / DT;
+            prevOwed = owed;
+            if (ups.upsMode !== "bridging" || ups.actualKw <= 1e-9) continue;
+            bridgingTicks++;
+            const gap = ups.actualKw - bookedKw;
+            if (worst === null || gap > worst.gap) {
+                worst = {
+                    tick: k, gap: +gap.toFixed(6),
+                    carriedKw: ups.actualKw, bookedKw: +bookedKw.toFixed(6),
+                    bufferLeft: ups.bufferLeft,
+                };
+            }
+        }
+        // The run really did bridge, and to exhaustion, or this proves nothing.
+        expect(bridgingTicks).toBeGreaterThan(100);
+        expect(ups.bufferLeft).toBeCloseTo(0, 9);
+        // Every tick, including the one that empties it.
+        expect(worst.gap, `carried more than left the battery: ${JSON.stringify(worst)}`)
+            .toBeLessThan(1e-9);
+    });
+
+    it("...and the seconds are still spent at full rating — the ride-through is unchanged", () => {
+        // The fix must not buy honesty by shortening the bridge: how long a
+        // UPS holds a room is the number the campaign levels are balanced on.
+        const { ups, pdu } = chain();
+        const r = place("rack", 14, 5);
+        wireBuildings(pdu, r);
+        r.assignedKw = CONFIG.buildings.rack.capacityKw;
+        STATE.demandFixedKw = CONFIG.buildings.rack.capacityKw;
+        for (let k = 0; k < 40; k++) resolvePower(DT);
+        const full = ups.bufferLeft;
+        expect(full).toBeCloseTo(U.bufferSec, 6);
+
+        STATE.gridOutage = { active: true, endsAt: 1e9, nextAt: Infinity, scope: "all" };
+        let held = 0;
+        for (let k = 0; k < 4000 && ups.bufferLeft > 0; k++) {
+            resolvePower(DT);
+            if (ups.upsMode === "bridging") held += DT;
+        }
+        // Seconds spent at the rating, not at the load: the whole buffer.
+        expect(held).toBeCloseTo(U.bufferSec, 1);
     });
 });
