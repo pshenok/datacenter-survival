@@ -23,6 +23,15 @@ export default defineConfig({
           environment: "happy-dom",
           include: ["tests/sim/*.test.mjs"],
           setupFiles: ["tests/helpers/sim-setup.mjs"],
+          // These tests PLAY the game — the economics pair below runs four
+          // full timed sessions and takes ~2.3 s on an idle machine and over
+          // 5 s when the rest of the suite is running beside it. Vitest's
+          // default is 5 s, which is a default and not a budget anyone chose
+          // for a suite like this, so the slowest honest test sat a busy CI
+          // runner away from a spurious red. 20 s still catches a genuine
+          // hang, which is the only thing a timeout is for here: nothing in
+          // these tests waits on IO, a timer or a clock.
+          testTimeout: 20000,
         },
       },
     ],
