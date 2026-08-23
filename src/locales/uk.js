@@ -171,6 +171,8 @@ export const UK_TRANSLATIONS = {
     "obj_serve_kwh": "Віддай {target} кВт·год",
     "obj_pue_below": "Тримай PUE < {value} протягом {hold}с",
     "obj_no_throttle": "Жодної стійки в тротлінгу {hold}с",
+    "obj_counts_from": "(рахується з {s}-ї с)",
+    "obj_starts_in": "почнеться через {s} с",
     "obj_time_left": "Лишилося: {s}с",
     "level_won_title": "РІВЕНЬ ПРОЙДЕНО",
     "level_won_sub": "Пройдено за {time}с",

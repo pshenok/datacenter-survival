@@ -171,6 +171,8 @@ export const EN_TRANSLATIONS = {
     "obj_serve_kwh": "Serve {target} kWh",
     "obj_pue_below": "Hold PUE < {value} for {hold}s",
     "obj_no_throttle": "No throttled racks for {hold}s",
+    "obj_counts_from": "(counted from {s}s)",
+    "obj_starts_in": "starts in {s}s",
     "obj_time_left": "Time left: {s}s",
     "level_won_title": "LEVEL COMPLETE",
     "level_won_sub": "Cleared in {time}s",
