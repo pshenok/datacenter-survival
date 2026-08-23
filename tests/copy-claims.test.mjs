@@ -22,6 +22,7 @@ import { Building, resetBuildingIds } from "../src/entities/Building.js";
 import { tickDemand } from "../src/sim/demand.js";
 import { EN_TRANSLATIONS } from "../src/locales/en.js";
 import { UK_TRANSLATIONS } from "../src/locales/uk.js";
+import { LOSS_CAUSES, CAUSE_IDS } from "../src/core/loss-causes.js";
 
 const DT = 0.05;
 const LOCALES = [["en", EN_TRANSLATIONS], ["uk", UK_TRANSLATIONS]];
@@ -88,6 +89,61 @@ describe("dark_chain's briefing states a reason CONFIG actually implements", () 
                     .not.toContain("generator");
             }
         }
+    });
+});
+
+describe("the loss legend describes the palette the badges actually use", () => {
+    // faq_loss_3 said "amber means the machine protected itself; red means the
+    // work was dropped". Two of the nine causes are dropped and NOT red:
+    // PLANNED WORK is sky and NOT ENOUGH RACKS is violet — and NOT ENOUGH
+    // RACKS is the most ordinary loss in free play, since demand grows in
+    // waves past the room's rack count. A player who read the legend and then
+    // saw a violet dot had been told colour encodes degraded-vs-dropped, and
+    // violet encoded neither.
+    //
+    // faq_loss_2 separately enumerated the taxonomy and omitted PLANNED WORK,
+    // the only one of the nine missing.
+    const RED = "#ef4444";
+
+    it("every cause the sim can record is named in the taxonomy, in both locales", () => {
+        for (const [locale, T] of LOCALES) {
+            for (const id of CAUSE_IDS) {
+                const label = T[LOSS_CAUSES[id].key];
+                expect(label, `${locale}: ${id} has no label`).toBeTruthy();
+                expect(
+                    T.faq_loss_2.includes(label),
+                    `${locale}: the loss taxonomy never mentions ${label} (${id})`
+                ).toBe(true);
+            }
+        }
+    });
+
+    it("the two dropped causes that are NOT red are called out by name", () => {
+        // The claim the legend makes is only honest while it names its own
+        // exceptions, so the test is written against the palette rather than
+        // against the sentence: if one of these ever turns red, this fails and
+        // the copy gets simpler.
+        const odd = CAUSE_IDS.filter(
+            (id) => LOSS_CAUSES[id].severity === "dropped" && LOSS_CAUSES[id].color !== RED
+        );
+        expect(odd.sort()).toEqual(["maintenance", "no_capacity"]);
+        for (const [locale, T] of LOCALES) {
+            for (const id of odd) {
+                const label = T[LOSS_CAUSES[id].key];
+                expect(
+                    T.faq_loss_3.includes(label),
+                    `${locale}: ${label} is dropped-but-not-red and the legend does not say so`
+                ).toBe(true);
+            }
+        }
+    });
+
+    it("...and the legend no longer claims a plain two-colour code", () => {
+        // "Amber means X; red means Y" was false the moment a third colour
+        // carried meaning. Three do.
+        const colours = new Set(CAUSE_IDS.map((id) => LOSS_CAUSES[id].color));
+        expect(colours.size).toBeGreaterThan(2);
+        expect(EN_TRANSLATIONS.faq_loss_3).not.toMatch(/^Amber means/);
     });
 });
 
