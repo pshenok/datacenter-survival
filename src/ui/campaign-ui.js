@@ -111,6 +111,18 @@ export function openBriefing(id) {
     document.getElementById("briefing-modal").classList.remove("hidden");
 }
 
+// Test seams (#289): the label and the row are pure functions of an objective
+// plus the clock, and the gate they now print is exactly the kind of thing
+// that goes wrong silently. Exported so it can be asserted for every gated
+// objective the campaign ships, in both locales, rather than for a copy.
+export function objectiveLabelForTest(o) {
+    return objectiveLabel(o);
+}
+
+export function objectiveRowForTest(o) {
+    return objectiveRow(o);
+}
+
 export function closeBriefing() {
     document.getElementById("briefing-modal").classList.add("hidden");
 }
@@ -139,15 +151,30 @@ function serveDuringKey(o) {
     return "obj_serve_during";
 }
 
+// A streak objective that has not started counting yet says so. The gate is
+// deliberate — evaluateObjective holds pue_below and no_throttle until
+// afterSec, because a cold empty room satisfies both trivially — but nothing
+// ever printed it. So a player who builds hot_aisle correctly in the first
+// twenty seconds watched "No throttled racks for 45s - 0 / 45s" sit at zero
+// for seventy, with the stated condition being met the whole time, on a level
+// whose lesson is precisely that the cooling is working.
+function afterSuffix(o) {
+    return (o.afterSec || 0) > 0
+        ? ` ${i18n.t("obj_counts_from", { s: o.afterSec })}`
+        : "";
+}
+
 function objectiveLabel(o) {
     if (o.type === "serve_kwh") return i18n.t("obj_serve_kwh", { target: o.target });
     if (o.type === "serve_kwh_during_event") return i18n.t(serveDuringKey(o), { target: o.target });
-    if (o.type === "pue_below") return i18n.t("obj_pue_below", { value: o.value, hold: o.holdSec });
+    if (o.type === "pue_below") {
+        return i18n.t("obj_pue_below", { value: o.value, hold: o.holdSec }) + afterSuffix(o);
+    }
     if (o.type === "money_at_least") return i18n.t("obj_money_left", { target: o.target });
     if (o.type === "maintenance_without_loss") {
         return i18n.t("obj_maintenance", { pct: Math.round(o.minServedRatio * 100) });
     }
-    return i18n.t("obj_no_throttle", { hold: o.holdSec });
+    return i18n.t("obj_no_throttle", { hold: o.holdSec }) + afterSuffix(o);
 }
 
 function bonusRow(o) {
@@ -166,7 +193,7 @@ function objectiveRow(o) {
         label = i18n.t(serveDuringKey(o), { target: o.target });
         progress = `${Math.min(o.progress, o.target).toFixed(1)} / ${o.target}`;
     } else if (o.type === "pue_below") {
-        label = i18n.t("obj_pue_below", { value: o.value, hold: o.holdSec });
+        label = i18n.t("obj_pue_below", { value: o.value, hold: o.holdSec }) + afterSuffix(o);
         progress = `${Math.floor(Math.min(o.progress, o.holdSec))} / ${o.holdSec}s`;
     } else if (o.type === "maintenance_without_loss") {
         label = i18n.t("obj_maintenance", { pct: Math.round(o.minServedRatio * 100) });
@@ -174,8 +201,15 @@ function objectiveRow(o) {
         const done = orders.filter((m) => m.state === "done").length;
         progress = `${done} / ${orders.length}`;
     } else {
-        label = i18n.t("obj_no_throttle", { hold: o.holdSec });
+        label = i18n.t("obj_no_throttle", { hold: o.holdSec }) + afterSuffix(o);
         progress = `${Math.floor(Math.min(o.progress, o.holdSec))} / ${o.holdSec}s`;
+    }
+    // ...and while the gate is still shut, the counter is not a score the
+    // player is losing. Zero out of forty-five reads like failure; a countdown
+    // reads like what it is.
+    const waitSec = (o.afterSec || 0) - STATE.elapsedGameTime;
+    if (!o.done && waitSec > 0) {
+        progress = i18n.t("obj_starts_in", { s: Math.ceil(waitSec) });
     }
     const mark = o.done
         ? '<span class="text-emerald-400">✓</span>'
