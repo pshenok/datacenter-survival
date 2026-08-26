@@ -28,6 +28,7 @@
 // it — both intended.
 
 import { CONFIG } from "../core/config.js";
+import { isDeadGear } from "./power.js";
 import { STATE, heatIndex } from "../core/state.js";
 
 const N = CONFIG.gridSize;
@@ -121,8 +122,13 @@ export function dissipateField(dt) {
 // CRAH dropped on the floor and never wired — or one left on a dead bus —
 // would drink from the pool it cannot physically reach and throttle every
 // working head in the room, which is a punishment for owning a spare.
+// Gates BOTH sides of the cooling loop: what a machine contributes and what
+// it consumes. outForService belongs here for the same reason broken does —
+// and specifically because sim/power.js now refuses to bill a serviced unit.
+// Stopping the draw without stopping the cooling would have been the worse
+// bug of the two: a machine moving heat for free.
 function isRunning(b) {
-    return b.powered && !b.broken;
+    return b.powered && !b.broken && !isDeadGear(b);
 }
 
 function updateCoolingLoop() {
