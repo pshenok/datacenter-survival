@@ -320,7 +320,22 @@ export function resolvePower(dt) {
             const duty = sanitize(b.duty, 0, 1);
             const full = b.config.drawKw || 0;
             const idle = Math.min(b.config.idleDrawKw || 0, full);
-            req = b.broken ? 0 : idle + (full - idle) * Math.pow(duty, b.config.partLoadExp || 1);
+            // ...and neither does a unit that is OUT FOR SERVICE.
+            // sim/maintenance.js states the contract — "out-for-service gear
+            // is DEAD GEAR (see isDeadGear in sim/power.js)" — and the chain
+            // half of this function honours it: the non-load branch below
+            // zeroes a dead node's capacity. This branch only ever asked
+            // about `broken`, so a CRAC, CRAH or chiller on an open service
+            // window kept drawing its full part-load figure while nobody was
+            // allowed to be using it. Measured: 3 kW, and powered = true.
+            //
+            // Not reachable in the shipped game — the only level that opens a
+            // work order points it at two PDUs, which are fanout nodes and
+            // correctly killed — so this is a trap set for the next level
+            // rather than a bug a player can hit today.
+            req = (b.broken || isDeadGear(b))
+                ? 0
+                : idle + (full - idle) * Math.pow(duty, b.config.partLoadExp || 1);
         } else {
             req = sanitize(b.assignedKw, 0, b.config.capacityKw || 0);
         }
