@@ -212,6 +212,50 @@ export function isDeadGear(b) {
 // battery empties, the charger buys it back, the toggle spends it again, and
 // every lap pays the round-trip loss for no change in when the energy was
 // bought.
+// kW a shaving UPS takes off the CHAIN ABOVE it this tick.
+//
+// Peak shaving says a charged UPS serves its subtree from the battery instead
+// of the grid. It only ever did half of that: the delivery phase swapped which
+// SOURCE paid for the kW, while the pull phase had already asked the parents
+// for the whole subtree draw — so every link above carried kW that never came
+// off a feed. A room could trip its own transformer while the battery was
+// carrying it, and shaving could not be used for the thing an operator
+// actually buys it for: staying under a rating.
+//
+// The cap is the charge really in the battery. Serving `kW` for dt seconds
+// costs dt*kW/capacityKw buffer-seconds, so bufferLeft seconds can cover at
+// most bufferLeft*capacityKw/dt kW — the same arithmetic the delivery phase
+// uses, stated once here so the two halves cannot disagree.
+function shaveReliefKw(b, subtreePull, dt, byId) {
+    if (!STATE.peakShave.on) return 0;
+    if (b.bufferLeft <= 0 || isDeadGear(b)) return 0;
+    const cap = b.config.capacityKw || 0;
+    if (cap <= 0 || !(dt > 0)) return 0;
+    // THE TOPMOST BATTERY SHAVES. A UPS under another charged one takes no
+    // relief, because its ancestor is about to lift the same load off the
+    // same chain — and one discharge covering both subtrees is worth more
+    // than two half-spent buffers. That ordering is not new: the delivery
+    // phase has always refused to shave kW an upstream battery already
+    // displaced (`served > battOut`), and it fell out of the top-down pass
+    // for free. The relief is computed BOTTOM-UP, where the child decides
+    // first, so the rule has to be stated rather than inherited.
+    if (shavingAncestor(b, byId)) return 0;
+    return Math.min(Math.max(0, subtreePull), (b.bufferLeft * cap) / dt);
+}
+
+// Is any UPS above this one going to shave this tick? Walks the primary
+// parents, bounded like primaryPathDead so a malformed cycle terminates.
+function shavingAncestor(b, byId) {
+    const maxHops = STATE.buildings.length + 1;
+    let node = byId.get(b.parentId);
+    let hops = 0;
+    while (node && hops++ < maxHops) {
+        if (node.type === "ups" && node.bufferLeft > 0 && !isDeadGear(node)) return true;
+        node = byId.get(node.parentId);
+    }
+    return false;
+}
+
 function chargerRequestKw(b) {
     const max = b.config.bufferSec || 0;
     if (b.bufferLeft >= max || isDeadGear(b)) return 0;
@@ -392,7 +436,15 @@ export function resolvePower(dt) {
             // link, and a charger must not trip the UPS's own breaker.
             if (b.type === "ups") {
                 b.rechargeReqKw = chargerRequestKw(b);
-                p += b.rechargeReqKw;
+                // What the subtree actually wants, kept whole: the delivery
+                // phase serves against this, not against the reduced figure
+                // that goes up the chain.
+                b.subtreeReqKw = p;
+                // The battery's share never reaches the parent.
+                // chargerRequestKw already returns 0 while shaving, so the two
+                // are never added at once.
+                b.shaveReliefKw = shaveReliefKw(b, p, dt, byId);
+                p = Math.max(0, p - b.shaveReliefKw) + b.rechargeReqKw;
             }
         }
         pulls.set(b.id, p);
@@ -469,7 +521,12 @@ export function resolvePower(dt) {
             // pull = the output-side subtree (already clipped by cap) PLUS
             // the charger request folded in by the pull phase. Only the
             // subtree part may go to the children.
-            const subtreePull = Math.max(0, pull - (b.rechargeReqKw || 0));
+            // The UNREDUCED subtree request. `pull` has had the shaving relief
+            // taken out of it on its way to the parent, so reconstructing the
+            // subtree from it would serve nothing while shaving.
+            const subtreePull = b.type === "ups"
+                ? Math.max(0, b.subtreeReqKw || 0)
+                : Math.max(0, pull - (b.rechargeReqKw || 0));
 
             if (outLive) {
                 // The load is served first; the charger lives on whatever is
@@ -481,8 +538,34 @@ export function resolvePower(dt) {
                 // books exact and charges the player honestly for it —
                 // stacking UPSes and leaving the toggle on cycles the same
                 // energy through two batteries at roundTripEff each.
-                const served = Math.min(outKw, subtreePull);
-                let battOut = Math.min(served, outBattKw);
+                // THE SHORTFALL THE CHAIN WAS NOT ASKED TO CARRY. The pull
+                // phase took shaveReliefKw off the parent's request, so the
+                // grant no longer covers the subtree — and the battery has to
+                // make up the difference with energy it ACTUALLY holds, not
+                // with the estimate the pull phase used.
+                //
+                // Spending it here, before `served` is fixed, is what keeps
+                // the books closed: a buffer that cannot cover the whole
+                // shortfall serves less, rather than serving it all and
+                // conjuring the remainder. Getting this wrong showed up as
+                // 89 kWh over a 1200 s run that neither the meter nor the
+                // battery paid for.
+                const grantServed = Math.min(outKw, subtreePull);
+                let fromShortfall = 0;
+                const shortfall = Math.max(0, Math.min(subtreePull - grantServed, b.shaveReliefKw || 0));
+                if (shortfall > 0 && b.bufferLeft > 0 && cap > 0) {
+                    const needSec = (shortfall * dt) / cap;
+                    const useSec = Math.min(needSec, b.bufferLeft);
+                    fromShortfall = (useSec * cap) / dt;
+                    b.bufferLeft -= useSec;
+                    b.bufferOwedKws += fromShortfall * dt;
+                }
+                const served = grantServed + fromShortfall;
+                // The parent's battery share can only back what the parent
+                // actually GRANTED. The shortfall came out of this node's own
+                // buffer a few lines up, so it is added rather than folded
+                // into a minimum that would let one kW.s be credited twice.
+                let battOut = Math.min(grantServed, outBattKw) + fromShortfall;
                 const spare = Math.max(0, outKw - served);
                 const battSpare = Math.max(0, outBattKw - battOut);
                 // The metered share splits in the same order: the subtree is
@@ -515,7 +598,10 @@ export function resolvePower(dt) {
                     // racks, bought from the battery instead of the meter —
                     // so whatever it displaces stops being grid-sourced.
                     gridOut = Math.max(0, gridOut - fromBattery);
-                    b.upsMode = fromBattery > 0 ? "shaving" : "idle";
+                    // Either door counts: the battery covered a shortfall the
+                    // chain was never asked to carry, or it displaced metered
+                    // kW the chain did carry, or both.
+                    b.upsMode = (fromBattery > 0 || fromShortfall > 0) ? "shaving" : "idle";
                 } else if ((b.rechargeReqKw || 0) > 0 && spare > 0 && b.bufferLeft < max) {
                     // RECHARGE. The charger draws what its rating and its
                     // upstream will allow, and puts back exactly the energy
@@ -545,10 +631,10 @@ export function resolvePower(dt) {
                         }
                         b.upsMode = "charging";
                     } else {
-                        b.upsMode = "idle";
+                        b.upsMode = fromShortfall > 0 ? "shaving" : "idle";
                     }
                 } else {
-                    b.upsMode = "idle";
+                    b.upsMode = fromShortfall > 0 ? "shaving" : "idle";
                 }
 
                 outKw = served;

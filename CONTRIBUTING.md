@@ -48,7 +48,7 @@ npm i
 npm run check     # eslint . && vitest run — exactly what CI runs
 ```
 
-Baseline today: lint clean, 35 test files, 586 tests, about 3 s. CI uses
+Baseline today: lint clean, 36 test files, 592 tests, about 3 s. CI uses
 Node 22. Nothing here downloads a browser: the demo recorder drives your
 system Chrome through `playwright-core`, which ships no binaries.
 
@@ -92,7 +92,7 @@ behind the result modal on the *ordinary* path, not the rare one.
 
 **Do not change the tick order.** `tickEvents → tickCrisis → tickDemand →
 resolvePower → tickHeat → tickContracts → tickMaintenance → tickCampaign`. It
-encodes causality, and nothing asserts it: the loop is hand-copied into 18
+encodes causality, and nothing asserts it: the loop is hand-copied into 19
 test files, so reordering `game.js` leaves the whole suite green while the
 shipped game behaves differently. That is the worst failure mode a teaching
 game has.
@@ -103,7 +103,7 @@ Never call `Math.random` in a sim module. Schedules use two sentinel values:
 "can never fire" (how a campaign level guarantees a deterministic script).
 
 **`resetState()` is hand-maintained.** Add a field to the `STATE` literal and
-forget `resetState()` and all 586 tests still pass — the field is silently
+forget `resetState()` and all 592 tests still pass — the field is silently
 deleted on the first reset. Call `resetBuildingIds()` alongside every
 `resetState()`, and `resetWireIds()` too if you use `src/sim/build.js`.
 
