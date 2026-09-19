@@ -64,6 +64,14 @@ export class Building {
         // upstream's capacity and burning a generator's fuel when the
         // generator is the one carrying it.
         this.rechargeReqKw = 0;
+        // kW the battery takes off the CHAIN this tick while peak shaving.
+        // Recomputed every tick by sim/power.js's pull phase; see shaveReliefKw
+        // there. Zero whenever the toggle is off, which is its default.
+        this.shaveReliefKw = 0;
+        // What the subtree asked this UPS for, BEFORE the shaving relief was
+        // taken off the parent's request. The delivery phase needs the real
+        // figure; the reduced one is what goes up the chain.
+        this.subtreeReqKw = 0;
 
         // UPS status this tick (owned by sim/power.js): "idle" | "charging"
         // | "shaving" (peak shaving, draining into the meter's expensive
